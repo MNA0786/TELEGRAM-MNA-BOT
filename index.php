@@ -14,10 +14,10 @@ define('BOT_USERNAME', $_ENV['BOT_USERNAME'] ?? getenv('BOT_USERNAME') ?: '@Ente
 
 // Public Channels Configuration
 define('PUBLIC_CHANNELS', [
-    ['id' => -1003181705395, 'name' => 'Main Channel', 'username' => '@EntertainmentTadka786', 'header' => 'on'],
-    ['id' => -1003614546520, 'name' => 'Serial Channel', 'username' => '@Entertainment_Tadka_Serial_786', 'header' => 'on'],
-    ['id' => -1002831605258, 'name' => 'Theater Prints', 'username' => '@threater_print_movies', 'header' => 'on'],
-    ['id' => -1002964109368, 'name' => 'Backup Channel', 'username' => '@ETBackup', 'header' => 'on']
+    ['id' => -1003181705395, 'name' => 'Main Channel', 'username' => '@EntertainmentTadka786', 'header' => 'on', 'icon' => '🍿'],
+    ['id' => -1003614546520, 'name' => 'Serial Channel', 'username' => '@Entertainment_Tadka_Serial_786', 'header' => 'on', 'icon' => '🎬'],
+    ['id' => -1002831605258, 'name' => 'Theater Prints', 'username' => '@threater_print_movies', 'header' => 'on', 'icon' => '🎭'],
+    ['id' => -1002964109368, 'name' => 'Backup Channel', 'username' => '@ETBackup', 'header' => 'on', 'icon' => '🔒']
 ]);
 
 // Private Channels (For internal use)
@@ -40,6 +40,7 @@ define('BACKUP_DIR', 'backups/');
 define('CACHE_EXPIRY', 300);
 define('ITEMS_PER_PAGE', 5);
 define('DAILY_REQUEST_LIMIT', 3);
+define('DEPLOY_FLAG', 'deploy.flag');
 // ------------------------------------------------
 
 // File initialization
@@ -81,6 +82,30 @@ $movie_cache = array();
 $waiting_users = array();
 $broadcast_states = array();
 
+// ======================================================================
+// DEPLOY NOTIFICATION
+// ======================================================================
+function send_deploy_notification() {
+    $message = "🚀 <b>Bot Deployed Successfully!</b>\n\n";
+    $message .= "📅 Time: " . date('Y-m-d H:i:s') . "\n";
+    $message .= "🤖 Bot: " . BOT_USERNAME . "\n";
+    $message .= "🌐 Platform: Render.com\n";
+    $message .= "✅ Status: Online\n\n";
+    $message .= "📊 <b>Configuration:</b>\n";
+    $message .= "• Channels: 6\n";
+    $message .= "• Request Group: ✅\n";
+    $message .= "• CSV Format: LOCKED\n";
+    $message .= "• Admin ID: " . ADMIN_ID;
+    
+    sendMessage(ADMIN_ID, $message, null, 'HTML');
+}
+
+// Pehli baar run? Tabhi notification bhejo
+if (!file_exists(DEPLOY_FLAG)) {
+    send_deploy_notification();
+    file_put_contents(DEPLOY_FLAG, date('Y-m-d H:i:s'));
+}
+
 // ==============================
 // CSV FORMAT VALIDATION - LOCKED
 // ==============================
@@ -109,6 +134,7 @@ function validate_csv_format() {
         $old_header = fgetcsv($handle);
         while (($row = fgetcsv($handle)) !== FALSE) {
             if (count($row) >= 3) {
+                // Try to map old format to new format
                 $data[] = [
                     'movie_name' => $row[0] ?? 'Unknown',
                     'message_id' => $row[1] ?? '',
@@ -118,6 +144,7 @@ function validate_csv_format() {
         }
         fclose($handle);
         
+        // Write with correct format
         $handle = fopen(CSV_FILE, 'w');
         fputcsv($handle, $expected);
         foreach ($data as $row) {
@@ -150,7 +177,7 @@ function get_channel_info($channel_id) {
 
 function get_channel_display_name($channel_id) {
     $info = get_channel_info($channel_id);
-    return $info ? $info['name'] : 'Unknown Channel';
+    return $info ? ($info['icon'] ?? '📢') . ' ' . $info['name'] : '📢 Unknown Channel';
 }
 
 function get_channel_link($channel_id) {
@@ -299,12 +326,16 @@ function sendTypingAction($chat_id) {
     ]);
 }
 
-function copyMessage($chat_id, $from_chat_id, $message_id) {
-    return apiRequest('copyMessage', [
+function copyMessage($chat_id, $from_chat_id, $message_id, $caption = '') {
+    $params = [
         'chat_id' => $chat_id,
         'from_chat_id' => $from_chat_id,
         'message_id' => $message_id
-    ]);
+    ];
+    if (!empty($caption)) {
+        $params['caption'] = $caption;
+    }
+    return apiRequest('copyMessage', $params);
 }
 
 function forwardMessage($chat_id, $from_chat_id, $message_id) {
@@ -356,22 +387,29 @@ function deliver_item_to_chat($chat_id, $item) {
 
 function deliver_movie_with_attribution($chat_id, $item, $username = null) {
     $channel_id = $item['channel_id'] ?? PUBLIC_CHANNELS[0]['id'];
+    $movie_name = $item['movie_name'];
     
     if (!empty($item['message_id']) && is_numeric($item['message_id'])) {
-        $result = forwardMessage($chat_id, $channel_id, $item['message_id']);
-        $result_data = json_decode($result, true);
-        
-        if ($result_data && $result_data['ok'] && $username) {
+        if ($username) {
             $caption = "━━━━━━━━━━━━━━━\nREQUESTED BY : @{$username}";
-            apiRequest('sendMessage', [
-                'chat_id' => $chat_id,
-                'text' => $caption,
-                'reply_to_message_id' => $result_data['result']['message_id'],
-                'parse_mode' => 'HTML'
-            ]);
+            $result = json_decode(copyMessage($chat_id, $channel_id, $item['message_id'], $caption), true);
+        } else {
+            $result = json_decode(forwardMessage($chat_id, $channel_id, $item['message_id']), true);
         }
         
-        return true;
+        if ($result && $result['ok']) {
+            return true;
+        } else {
+            // Fallback to text
+            $text = "🎬 <b>" . htmlspecialchars($movie_name) . "</b>\n\n";
+            $text .= "📢 Channel: " . get_channel_display_name($channel_id) . "\n";
+            $text .= "🆔 Message ID: <code>{$item['message_id']}</code>\n";
+            if ($username) {
+                $text .= "👤 Requested by: @{$username}\n";
+            }
+            sendMessage($chat_id, $text, null, 'HTML');
+            return false;
+        }
     }
     return false;
 }
@@ -392,9 +430,6 @@ function calculateETA($current, $total, $start_time) {
     }
 }
 
-// ==============================
-// SIMPLIFIED FUNCTION - NO OPERATOR ISSUES
-// ==============================
 function forward_page_movies_with_eta($chat_id, array $page_movies, $username = null) {
     $total = count($page_movies);
     if ($total === 0) return;
@@ -436,7 +471,6 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             $filled = round(($percentage / 100) * $bar_length);
             $empty = $bar_length - $filled;
             
-            // DIRECT STRING CONCATENATION - SAFEST METHOD
             $progress_text = "⏳ <b>Forwarding Movies...</b>\n";
             $progress_text = $progress_text . "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . "█ " . $percentage . "%\n";
             $progress_text = $progress_text . "├ 📊 " . $current . "/" . $total . " items\n";
@@ -453,9 +487,9 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
     }
     
     $final_msg = "✅ <b>Forwarding Complete!</b>\n";
-    $final_msg = $final_msg . "├ 📊 Total: " . $total . "\n";
-    $final_msg = $final_msg . "├ ✅ Success: " . $success_count . "\n";
-    $final_msg = $final_msg . "├ ❌ Failed: " . $fail_count . "\n";
+    $final_msg = $final_msg . "├ 📊 Total: {$total}\n";
+    $final_msg = $final_msg . "├ ✅ Success: {$success_count}\n";
+    $final_msg = $final_msg . "├ ❌ Failed: {$fail_count}\n";
     $final_msg = $final_msg . "├ ⏱️ Time Taken: " . (time() - $start_time) . "s\n";
     $final_msg = $final_msg . "└ 📢 Join: @EntertainmentTadka786";
     
@@ -476,13 +510,13 @@ function bulk_send_movies($chat_id, $movies, $username = null) {
         
         if (($index + 1) % 3 == 0) {
             $percent = round((($index + 1) / $total) * 100);
-            editMessage($chat_id, $progress, "⏳ Progress: " . ($index + 1) . "/" . $total . " (" . $percent . "%)");
+            editMessage($chat_id, $progress, "⏳ Progress: {$index + 1}/{$total} ({$percent}%)");
         }
         
         usleep(300000);
     }
     
-    editMessage($chat_id, $progress, "✅ Sent " . $success . "/" . $total . " movies successfully!");
+    editMessage($chat_id, $progress, "✅ Sent {$success}/{$total} movies successfully!");
 }
 
 // ==============================
@@ -644,7 +678,7 @@ function append_movie($movie_name, $message_id_raw, $channel_id, $date = null) {
 }
 
 // ==============================
-// Search functions
+// SEARCH FUNCTIONS
 // ==============================
 function smart_search($query) {
     global $movie_messages;
@@ -667,29 +701,25 @@ function smart_search($query) {
 }
 
 function detect_language($text) {
-    $hindi_keywords = ['फिल्म', 'मूवी', 'डाउनलोड', 'हिंदी'];
-    $english_keywords = ['movie', 'download', 'watch'];
-    $h=0;$e=0;
-    foreach ($hindi_keywords as $k) if (strpos($text, $k)!==false) $h = $h + 1;
-    foreach ($english_keywords as $k) if (stripos($text, $k)!==false) $e = $e + 1;
-    return $h>$e ? 'hindi' : 'english';
+    $hindi_pattern = '/[\x{0900}-\x{097F}]/u';
+    if (preg_match($hindi_pattern, $text)) {
+        return 'hindi';
+    }
+    return 'english';
 }
 
 function send_multilingual_response($chat_id, $message_type, $language) {
     $responses = [
-        'hindi'=>[
-            'welcome' => "🎬 Boss, kis movie ki talash hai?",
-            'found' => "✅ Mil gayi! Movie forward ho rahi hai...",
-            'not_found' => "😔 Yeh movie abhi available nahi hai!\n\n📝 Aap ise request kar sakte hain: @EntertainmentTadka7860\n\n🔔 Jab bhi yeh add hogi, main automatically bhej dunga!",
-            'searching' => "🔍 Dhoondh raha hoon... Zara wait karo"
+        'hindi' => [
+            'searching' => "🔍 Dhoondh raha hoon...",
+            'not_found' => "❌ Yeh movie nahi mili!\n\n📝 /request se request karo."
         ],
-        'english'=>[
-            'welcome' => "🎬 Boss, which movie are you looking for?",
-            'found' => "✅ Found it! Forwarding the movie...",
-            'not_found' => "😔 This movie isn't available yet!\n\n📝 You can request it here: @EntertainmentTadka7860\n\n🔔 I'll send it automatically once it's added!",
-            'searching' => "🔍 Searching... Please wait"
+        'english' => [
+            'searching' => "🔍 Searching...",
+            'not_found' => "❌ Movie not found!\n\n📝 Use /request to request."
         ]
     ];
+    
     sendMessage($chat_id, $responses[$language][$message_type]);
 }
 
@@ -697,9 +727,70 @@ function update_user_points($user_id, $action) {
     $points_map = ['search'=>1, 'found_movie'=>5, 'daily_login'=>10];
     $users_data = json_decode(file_get_contents(USERS_FILE), true);
     if (!isset($users_data['users'][$user_id]['points'])) $users_data['users'][$user_id]['points'] = 0;
-    $users_data['users'][$user_id]['points'] = $users_data['users'][$user_id]['points'] + ($points_map[$action] ?? 0);
+    $users_data['users'][$user_id]['points'] += ($points_map[$action] ?? 0);
     $users_data['users'][$user_id]['last_activity'] = date('Y-m-d H:i:s');
     file_put_contents(USERS_FILE, json_encode($users_data, JSON_PRETTY_PRINT));
+}
+
+// ======================================================================
+// SHOW SEARCH RESULTS WITH PAGINATION
+// ======================================================================
+function show_search_results($chat_id, $results, $query, $page = 1) {
+    $per_page = ITEMS_PER_PAGE;
+    $total = count($results);
+    
+    if ($total === 0) {
+        sendMessage($chat_id, "❌ No results found for '$query'");
+        return;
+    }
+    
+    $pages = ceil($total / $per_page);
+    $page = max(1, min($page, $pages));
+    
+    $start = ($page - 1) * $per_page;
+    $page_results = array_slice($results, $start, $per_page);
+    
+    $msg = "🔍 <b>Results for '$query'</b>\n";
+    $msg .= "📄 Page $page/$pages | Total: $total\n\n";
+    
+    foreach ($page_results as $index => $movie) {
+        $num = $start + $index + 1;
+        $channel_display = get_channel_display_name($movie['channel_id']);
+        $msg .= "$num. <b>" . htmlspecialchars($movie['movie_name']) . "</b>\n";
+        $msg .= "   $channel_display\n\n";
+    }
+    
+    $keyboard = ['inline_keyboard' => []];
+    $nav_row = [];
+    
+    if ($page > 1) {
+        $nav_row[] = ['text' => '⬅️ Prev', 'callback_data' => "search_" . urlencode($query) . "_" . ($page - 1)];
+    }
+    
+    $nav_row[] = ['text' => "📄 $page/$pages", 'callback_data' => 'current_page'];
+    
+    if ($page < $pages) {
+        $nav_row[] = ['text' => 'Next ➡️', 'callback_data' => "search_" . urlencode($query) . "_" . ($page + 1)];
+    }
+    
+    $keyboard['inline_keyboard'][] = $nav_row;
+    
+    if ($total > 1) {
+        $keyboard['inline_keyboard'][] = [
+            ['text' => "📦 Send All ($total)", 'callback_data' => "sendall_" . urlencode($query)]
+        ];
+    }
+    
+    // Add movie selection buttons for first few results
+    $movie_row = [];
+    foreach (array_slice($page_results, 0, 3) as $movie) {
+        $movie_row[] = ['text' => '🎬 ' . substr($movie['movie_name'], 0, 15), 'callback_data' => 'get_' . $movie['movie_name']];
+    }
+    if (!empty($movie_row)) {
+        $keyboard['inline_keyboard'][] = $movie_row;
+    }
+    
+    sendMessage($chat_id, $msg, $keyboard, 'HTML');
 }
 
 function advanced_search($chat_id, $query, $user_id = null) {
@@ -735,20 +826,18 @@ function advanced_search($chat_id, $query, $user_id = null) {
     $found = smart_search($q);
     
     if (!empty($found)) {
-        $msg = "🔍 Found " . count($found) . " movies for '$query':\n\n";
-        $i = 1;
-        foreach ($found as $movie=>$data) {
-            $msg = $msg . $i . ". " . $movie . " (" . $data['count'] . " entries)\n";
-            $i = $i + 1;
-            if ($i > 15) break;
+        // Convert found data to movie entries
+        $results = [];
+        foreach ($found as $movie_name => $data) {
+            $entries = $movie_messages[strtolower($movie_name)] ?? [];
+            foreach ($entries as $entry) {
+                $results[] = $entry;
+            }
         }
-        sendMessage($chat_id, $msg);
+        // Remove duplicates (optional, but good)
+        $results = array_map("unserialize", array_unique(array_map("serialize", $results)));
         
-        $keyboard = ['inline_keyboard'=>[]];
-        foreach (array_slice(array_keys($found), 0, 5) as $movie) {
-            $keyboard['inline_keyboard'][] = [[ 'text'=>"🎬 ".ucwords($movie), 'callback_data'=>'get_'.$movie ]];
-        }
-        sendMessage($chat_id, "🚀 Top matches:", $keyboard);
+        show_search_results($chat_id, $results, $query, 1);
         
         if ($user_id) update_user_points($user_id, 'found_movie');
     } else {
@@ -764,34 +853,363 @@ function advanced_search($chat_id, $query, $user_id = null) {
 }
 
 // ==============================
-// Admin stats
+// REQUEST SYSTEM
 // ==============================
-function admin_stats($chat_id) {
-    $stats = get_stats();
-    $users_data = json_decode(file_get_contents(USERS_FILE), true);
-    $total_users = count($users_data['users'] ?? []);
+function initialize_request_file() {
+    if (!file_exists(REQUESTS_FILE)) {
+        $default = [
+            'requests' => [],
+            'pending' => [],
+            'approved' => [],
+            'user_counts' => []
+        ];
+        file_put_contents(REQUESTS_FILE, json_encode($default, JSON_PRETTY_PRINT));
+    }
+}
+
+function can_user_request($user_id) {
+    initialize_request_file();
+    $data = json_decode(file_get_contents(REQUESTS_FILE), true);
+    $today = date('Y-m-d');
     
-    $msg = "📊 Bot Statistics\n\n";
-    $msg = $msg . "🎬 Total Movies: " . ($stats['total_movies'] ?? 0) . "\n";
-    $msg = $msg . "👥 Total Users: " . $total_users . "\n";
-    $msg = $msg . "🔍 Total Searches: " . ($stats['total_searches'] ?? 0) . "\n";
-    $msg = $msg . "🕒 Last Updated: " . ($stats['last_updated'] ?? 'N/A') . "\n\n";
+    $count = 0;
+    foreach ($data['requests'] as $req) {
+        if ($req['user_id'] == $user_id && substr($req['date'], 0, 10) == $today) {
+            $count++;
+        }
+    }
     
-    $csv_data = load_and_clean_csv();
-    $recent = array_slice($csv_data, -5);
-    $msg = $msg . "📈 Recent Uploads:\n";
-    foreach ($recent as $r) {
-        $channel_name = get_channel_display_name($r['channel_id'] ?? PUBLIC_CHANNELS[0]['id']);
-        $msg = $msg . "• " . $r['movie_name'] . " (" . $channel_name . ")\n";
+    return $count < DAILY_REQUEST_LIMIT;
+}
+
+function add_movie_request($user_id, $movie_name, $username = '') {
+    if (!can_user_request($user_id)) {
+        return ['success' => false, 'message' => 'Daily limit reached'];
+    }
+    
+    initialize_request_file();
+    $data = json_decode(file_get_contents(REQUESTS_FILE), true);
+    
+    $request = [
+        'id' => uniqid(),
+        'user_id' => $user_id,
+        'username' => $username,
+        'movie_name' => $movie_name,
+        'date' => date('Y-m-d H:i:s'),
+        'status' => 'pending'
+    ];
+    
+    $data['requests'][] = $request;
+    $data['pending'][] = $request;
+    
+    if (!isset($data['user_counts'][$user_id])) {
+        $data['user_counts'][$user_id] = 0;
+    }
+    $data['user_counts'][$user_id]++;
+    
+    file_put_contents(REQUESTS_FILE, json_encode($data, JSON_PRETTY_PRINT));
+    
+    // Notify admin
+    $admin_msg = "📥 <b>New Request</b>\n\n";
+    $admin_msg .= "🎬 Movie: $movie_name\n";
+    $admin_msg .= "👤 User: @$username\n";
+    $admin_msg .= "🆔 ID: " . $request['id'];
+    
+    sendMessage(ADMIN_ID, $admin_msg, null, 'HTML');
+    error_log("Request added: $movie_name by $user_id");
+    
+    return ['success' => true, 'message' => 'Request added'];
+}
+
+function get_pending_requests() {
+    initialize_request_file();
+    $data = json_decode(file_get_contents(REQUESTS_FILE), true);
+    return $data['pending'] ?? [];
+}
+
+function approve_requests($count = 5) {
+    initialize_request_file();
+    $data = json_decode(file_get_contents(REQUESTS_FILE), true);
+    
+    $pending = $data['pending'] ?? [];
+    if (empty($pending)) {
+        return ['success' => false, 'count' => 0];
+    }
+    
+    $to_approve = array_slice($pending, 0, $count);
+    $approved_ids = array_column($to_approve, 'id');
+    
+    // Update status in requests array
+    foreach ($data['requests'] as &$req) {
+        if (in_array($req['id'], $approved_ids)) {
+            $req['status'] = 'approved';
+            $data['approved'][] = $req;
+        }
+    }
+    
+    // Remove from pending
+    $data['pending'] = array_values(array_filter($data['pending'], function($r) use ($approved_ids) {
+        return !in_array($r['id'], $approved_ids);
+    }));
+    
+    file_put_contents(REQUESTS_FILE, json_encode($data, JSON_PRETTY_PRINT));
+    
+    return ['success' => true, 'count' => count($to_approve), 'requests' => $to_approve];
+}
+
+function show_pending_requests($chat_id) {
+    $pending = get_pending_requests();
+    
+    if (empty($pending)) {
+        sendMessage($chat_id, "✅ No pending requests!");
+        return;
+    }
+    
+    $msg = "⏳ <b>Pending Requests: " . count($pending) . "</b>\n\n";
+    
+    foreach (array_slice($pending, 0, 10) as $req) {
+        $msg .= "🎬 <b>" . htmlspecialchars($req['movie_name']) . "</b>\n";
+        $msg .= "👤 @{$req['username']}\n";
+        $msg .= "🆔 {$req['id']}\n";
+        $msg .= "📅 " . substr($req['date'], 0, 10) . "\n\n";
+    }
+    
+    if (count($pending) > 10) {
+        $msg .= "... and " . (count($pending) - 10) . " more\n\n";
+    }
+    
+    $keyboard = [
+        'inline_keyboard' => [
+            [['text' => '✅ Approve 5', 'callback_data' => 'bulk_approve_5']],
+            [['text' => '✅ Approve 10', 'callback_data' => 'bulk_approve_10']],
+            [['text' => '✅ Approve All', 'callback_data' => 'approve_all']]
+        ]
+    ];
+    
+    sendMessage($chat_id, $msg, $keyboard, 'HTML');
+}
+
+function bulk_approve_requests($chat_id, $count) {
+    $result = approve_requests($count);
+    
+    if (!$result['success'] || $result['count'] == 0) {
+        sendMessage($chat_id, "✅ No pending requests to approve!");
+        return;
+    }
+    
+    $msg = "✅ <b>Bulk Approve Complete</b>\n\n";
+    $msg .= "📊 Approved: {$result['count']} requests\n\n";
+    
+    if (!empty($result['requests'])) {
+        $msg .= "🎬 <b>Approved Movies:</b>\n";
+        foreach ($result['requests'] as $req) {
+            $msg .= "• " . htmlspecialchars($req['movie_name']) . "\n";
+        }
     }
     
     sendMessage($chat_id, $msg, null, 'HTML');
+    error_log("Admin $chat_id approved {$result['count']} requests");
+}
+
+function show_user_requests($chat_id, $user_id, $page = 1) {
+    initialize_request_file();
+    $data = json_decode(file_get_contents(REQUESTS_FILE), true);
+    
+    $user_reqs = array_filter($data['requests'] ?? [], function($r) use ($user_id) {
+        return $r['user_id'] == $user_id && $r['status'] == 'pending';
+    });
+    
+    $user_reqs = array_values($user_reqs);
+    $total = count($user_reqs);
+    
+    if (empty($user_reqs)) {
+        $msg = "📭 You haven't made any requests yet.\n\n";
+        $msg .= "💡 Use /request [movie name] to request!";
+        $keyboard = [
+            'inline_keyboard' => [
+                [['text' => '🎬 Make a Request', 'callback_data' => 'request_prompt']]
+            ]
+        ];
+        sendMessage($chat_id, $msg, $keyboard, 'HTML');
+        return;
+    }
+    
+    $items_per_page = 3;
+    $total_pages = ceil($total / $items_per_page);
+    $page = max(1, min($page, $total_pages));
+    $start = ($page - 1) * $items_per_page;
+    $page_reqs = array_slice($user_reqs, $start, $items_per_page);
+    
+    $msg = "📋 <b>Your Pending Requests</b>\n";
+    $msg .= "├ 📊 Total: {$total}\n";
+    $msg .= "└ 📄 Page: {$page}/{$total_pages}\n\n";
+    
+    $count = $start + 1;
+    foreach ($page_reqs as $req) {
+        $msg .= "{$count}. 🎬 <b>" . htmlspecialchars($req['movie_name']) . "</b>\n";
+        $msg .= "   🆔 <code>{$req['id']}</code>\n";
+        $msg .= "   📅 " . date('d-m-Y H:i', strtotime($req['date'])) . "\n\n";
+        $count++;
+    }
+    
+    $keyboard = ['inline_keyboard' => []];
+    
+    $nav_row = [];
+    if ($page > 1) {
+        $nav_row[] = ['text' => '⬅️ Prev', 'callback_data' => 'myreq_prev_' . ($page - 1)];
+    }
+    $nav_row[] = ['text' => "📄 {$page}/{$total_pages}", 'callback_data' => 'myreq_current'];
+    if ($page < $total_pages) {
+        $nav_row[] = ['text' => 'Next ➡️', 'callback_data' => 'myreq_next_' . ($page + 1)];
+    }
+    if (!empty($nav_row)) {
+        $keyboard['inline_keyboard'][] = $nav_row;
+    }
+    
+    $keyboard['inline_keyboard'][] = [
+        ['text' => '➕ New Request', 'callback_data' => 'request_prompt'],
+        ['text' => '🔄 Refresh', 'callback_data' => 'myreq_refresh_' . $page]
+    ];
+    
+    sendMessage($chat_id, $msg, $keyboard, 'HTML');
+}
+
+function check_request_limit($chat_id, $user_id) {
+    initialize_request_file();
+    $data = json_decode(file_get_contents(REQUESTS_FILE), true);
+    $today = date('Y-m-d');
+    
+    $used = 0;
+    foreach ($data['requests'] as $req) {
+        if ($req['user_id'] == $user_id && substr($req['date'], 0, 10) == $today) {
+            $used++;
+        }
+    }
+    $remaining = DAILY_REQUEST_LIMIT - $used;
+    $reset_time = date('h:i A', strtotime('tomorrow 00:00'));
+    
+    $msg = "📊 <b>Request Limit Status</b>\n\n";
+    $msg .= "┌─────────────────────┐\n";
+    $msg .= "│ ✅ Used: <b>{$used}/" . DAILY_REQUEST_LIMIT . "</b>\n";
+    $msg .= "│ ⏳ Remaining: <b>{$remaining}</b>\n";
+    $msg .= "│ 📅 Reset: <b>{$reset_time}</b>\n";
+    $msg .= "└─────────────────────┘\n\n";
+    
+    $progress = round(($used / DAILY_REQUEST_LIMIT) * 100);
+    $bar_length = 15;
+    $filled = round(($progress / 100) * $bar_length);
+    $empty = $bar_length - $filled;
+    $msg .= "📊 <b>Usage:</b> " . str_repeat('█', $filled) . str_repeat('░', $empty) . " {$progress}%\n\n";
+    
+    $keyboard = [
+        'inline_keyboard' => [
+            [
+                ['text' => '➕ New Request', 'callback_data' => 'request_prompt'],
+                ['text' => '📋 My Requests', 'callback_data' => 'myreq_page_1']
+            ],
+            [
+                ['text' => '🔄 Check Again', 'callback_data' => 'check_limit'],
+                ['text' => '❓ Help', 'callback_data' => 'show_help']
+            ]
+        ]
+    ];
+    
+    sendMessage($chat_id, $msg, $keyboard, 'HTML');
+}
+
+// ==============================
+// Admin stats
+// ==============================
+function admin_stats($chat_id, $view = 'basic') {
+    $stats = get_stats();
+    $users_data = json_decode(file_get_contents(USERS_FILE), true);
+    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
+    $total_users = count($users_data['users'] ?? []);
+    $csv_data = load_and_clean_csv();
+    
+    if ($view == 'basic') {
+        $msg = "📊 <b>Bot Statistics</b>\n\n";
+        $msg .= "┌─────────────────────┐\n";
+        $msg .= "│ 🎬 Movies: <b>{$stats['total_movies']}</b>\n";
+        $msg .= "│ 👥 Users: <b>{$total_users}</b>\n";
+        $msg .= "│ 🔍 Searches: <b>{$stats['total_searches']}</b>\n";
+        $msg .= "│ ⏳ Pending: <b>" . count($requests['pending'] ?? []) . "</b>\n";
+        $msg .= "│ ✅ Approved: <b>" . count($requests['approved'] ?? []) . "</b>\n";
+        $msg .= "└─────────────────────┘\n\n";
+        $msg .= "🕒 Last Updated: " . ($stats['last_updated'] ?? 'N/A');
+    } elseif ($view == 'movies') {
+        $msg = "🎬 <b>Movie Statistics</b>\n\n";
+        $msg .= "├ Total: <b>{$stats['total_movies']}</b>\n";
+        
+        $by_channel = [];
+        foreach ($csv_data as $m) {
+            $ch = $m['channel_id'] ?? 'unknown';
+            $by_channel[$ch] = ($by_channel[$ch] ?? 0) + 1;
+        }
+        
+        $msg .= "├ By Channel:\n";
+        foreach ($by_channel as $ch_id => $count) {
+            $ch_name = get_channel_display_name($ch_id);
+            $msg .= "│  • {$ch_name}: <b>{$count}</b>\n";
+        }
+        
+        $recent = array_slice($csv_data, -5);
+        $msg .= "└ Recent:\n";
+        foreach ($recent as $r) {
+            $msg .= "   • " . htmlspecialchars(substr($r['movie_name'], 0, 25)) . "\n";
+        }
+    } elseif ($view == 'users') {
+        $msg = "👥 <b>User Statistics</b>\n\n";
+        $msg .= "├ Total Users: <b>{$total_users}</b>\n";
+        
+        $active_today = 0;
+        $today = date('Y-m-d');
+        foreach ($users_data['users'] as $u) {
+            if (substr($u['last_active'] ?? '', 0, 10) == $today) {
+                $active_today++;
+            }
+        }
+        $msg .= "├ Active Today: <b>{$active_today}</b>\n";
+        
+        $top_users = [];
+        foreach ($users_data['users'] as $uid => $u) {
+            $top_users[$uid] = $u['points'] ?? 0;
+        }
+        arsort($top_users);
+        $top_users = array_slice($top_users, 0, 3, true);
+        
+        $msg .= "└ Top Users:\n";
+        foreach ($top_users as $uid => $points) {
+            $name = $users_data['users'][$uid]['first_name'] ?? 'User';
+            $msg .= "   • {$name}: <b>{$points} pts</b>\n";
+        }
+    }
+    
+    $keyboard = [
+        'inline_keyboard' => [
+            [
+                ['text' => '📊 Basic', 'callback_data' => 'stats_basic'],
+                ['text' => '🎬 Movies', 'callback_data' => 'stats_movies'],
+                ['text' => '👥 Users', 'callback_data' => 'stats_users']
+            ],
+            [
+                ['text' => '📥 Requests', 'callback_data' => 'admin_pending'],
+                ['text' => '📁 CSV Info', 'callback_data' => 'admin_csv']
+            ],
+            [
+                ['text' => '🔄 Refresh', 'callback_data' => 'stats_refresh_' . $view],
+                ['text' => '📤 Export', 'callback_data' => 'stats_export']
+            ]
+        ]
+    ];
+    
+    sendMessage($chat_id, $msg, $keyboard, 'HTML');
 }
 
 // ==============================
 // Show CSV Data
 // ==============================
-function show_csv_data($chat_id, $show_all = false) {
+function show_csv_data($chat_id, $page = 1, $filter = 'all') {
     if (!file_exists(CSV_FILE)) {
         sendMessage($chat_id, "❌ CSV file not found.");
         return;
@@ -804,7 +1222,6 @@ function show_csv_data($chat_id, $show_all = false) {
     }
     
     fgetcsv($handle);
-    
     $movies = [];
     while (($row = fgetcsv($handle)) !== FALSE) {
         if (count($row) >= 3) {
@@ -820,188 +1237,74 @@ function show_csv_data($chat_id, $show_all = false) {
     
     $movies = array_reverse($movies);
     
-    $limit = $show_all ? count($movies) : 10;
-    $movies = array_slice($movies, 0, $limit);
-    
-    $message = "📊 CSV Movie Database\n\n";
-    $message = $message . "📁 Total Movies: " . count($movies) . "\n";
-    if (!$show_all) {
-        $message = $message . "🔍 Showing latest 10 entries\n";
-        $message = $message . "📋 Use '/checkcsv all' for full list\n\n";
-    } else {
-        $message = $message . "📋 Full database listing\n\n";
+    // Apply filters
+    if ($filter == '2025') {
+        $movies = array_filter($movies, function($m) { return strpos($m[0], '2025') !== false; });
+    } elseif ($filter == '2024') {
+        $movies = array_filter($movies, function($m) { return strpos($m[0], '2024') !== false; });
+    } elseif ($filter == 'hindi') {
+        $movies = array_filter($movies, function($m) { 
+            $keywords = ['hindi', 'हिंदी'];
+            foreach ($keywords as $k) {
+                if (stripos($m[0], $k) !== false) return true;
+            }
+            return false;
+        });
+    } elseif ($filter == 'english') {
+        $movies = array_filter($movies, function($m) { 
+            return preg_match('/[a-zA-Z]/', $m[0]) && !preg_match('/[हिंदी]/', $m[0]);
+        });
     }
     
-    $i = 1;
-    foreach ($movies as $movie) {
+    $movies = array_values($movies);
+    $total = count($movies);
+    $items_per_page = 5;
+    $total_pages = ceil($total / $items_per_page);
+    $page = max(1, min($page, $total_pages));
+    $start = ($page - 1) * $items_per_page;
+    $page_movies = array_slice($movies, $start, $items_per_page);
+    
+    $message = "📊 <b>CSV Movie Database</b>\n";
+    $message .= "├ 📁 Total: {$total} movies\n";
+    $message .= "├ 🔍 Filter: " . strtoupper($filter) . "\n";
+    $message .= "└ 📄 Page: {$page}/{$total_pages}\n\n";
+    
+    $i = $start + 1;
+    foreach ($page_movies as $movie) {
         $movie_name = $movie[0] ?? 'N/A';
         $message_id = $movie[1] ?? 'N/A';
         $channel_id = $movie[2] ?? 'N/A';
         $channel_name = get_channel_display_name($channel_id);
         
-        $message = $message . $i . ". 🎬 " . htmlspecialchars($movie_name) . "\n";
-        $message = $message . "   📝 ID: " . $message_id . "\n";
-        $message = $message . "   📺 Channel: " . $channel_name . "\n\n";
-        
-        $i = $i + 1;
-        
-        if (strlen($message) > 3000) {
-            sendMessage($chat_id, $message, null, 'HTML');
-            $message = "📊 Continuing...\n\n";
-        }
+        $message .= "{$i}. 🎬 <b>" . htmlspecialchars(substr($movie_name, 0, 30)) . "</b>\n";
+        $message .= "   📝 ID: {$message_id} | 📺 {$channel_name}\n\n";
+        $i++;
     }
-    
-    $message = $message . "💾 File: " . CSV_FILE . "\n";
-    $message = $message . "⏰ Last Updated: " . date('Y-m-d H:i:s', filemtime(CSV_FILE));
-    
-    sendMessage($chat_id, $message, null, 'HTML');
-}
-
-// ==============================
-// REQUEST FUNCTIONS
-// ==============================
-function can_user_request($user_id) {
-    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
-    $today = date('Y-m-d');
-    
-    $count = 0;
-    foreach ($requests['pending'] as $req) {
-        if ($req['user_id'] == $user_id && substr($req['date'], 0, 10) == $today) {
-            $count = $count + 1;
-        }
-    }
-    
-    return $count < DAILY_REQUEST_LIMIT;
-}
-
-function check_remaining_requests($user_id) {
-    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
-    $today = date('Y-m-d');
-    
-    $count = 0;
-    foreach ($requests['pending'] as $req) {
-        if ($req['user_id'] == $user_id && substr($req['date'], 0, 10) == $today) {
-            $count = $count + 1;
-        }
-    }
-    
-    return $count;
-}
-
-function add_movie_request($user_id, $username, $movie_name) {
-    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
-    
-    $request_id = uniqid();
-    $requests['pending'][] = [
-        'id' => $request_id,
-        'user_id' => $user_id,
-        'username' => $username,
-        'movie' => $movie_name,
-        'date' => date('Y-m-d H:i:s'),
-        'status' => 'pending'
-    ];
-    
-    file_put_contents(REQUESTS_FILE, json_encode($requests, JSON_PRETTY_PRINT));
-    return $request_id;
-}
-
-function get_pending_requests($limit = null) {
-    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
-    $pending = $requests['pending'] ?? [];
-    
-    if ($limit) {
-        return array_slice($pending, 0, $limit);
-    }
-    return $pending;
-}
-
-function approve_requests($request_ids) {
-    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
-    $approved = [];
-    
-    foreach ($requests['pending'] as $key => $req) {
-        if (in_array($req['id'], $request_ids)) {
-            $approved[] = $req;
-            unset($requests['pending'][$key]);
-            
-            append_movie($req['movie'], 'REQUESTED', PUBLIC_CHANNELS[0]['id'], date('d-m-Y'));
-        }
-    }
-    
-    $requests['approved'] = array_merge($requests['approved'] ?? [], $approved);
-    $requests['pending'] = array_values($requests['pending']);
-    
-    file_put_contents(REQUESTS_FILE, json_encode($requests, JSON_PRETTY_PRINT));
-    return $approved;
-}
-
-function show_user_requests($chat_id, $user_id) {
-    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
-    
-    $user_reqs = array_filter($requests['pending'], function($r) use ($user_id) {
-        return $r['user_id'] == $user_id;
-    });
-    
-    if (empty($user_reqs)) {
-        sendMessage($chat_id, "📭 You haven't made any requests yet.");
-        return;
-    }
-    
-    $msg = "📋 <b>Your Pending Requests</b>\n\n";
-    $count = 1;
-    foreach (array_reverse($user_reqs) as $req) {
-        $msg = $msg . $count . ". 🎬 " . htmlspecialchars($req['movie']) . "\n";
-        $msg = $msg . "   📅 " . date('d-m-Y H:i', strtotime($req['date'])) . "\n\n";
-        $count = $count + 1;
-    }
-    
-    sendMessage($chat_id, $msg, null, 'HTML');
-}
-
-// ==============================
-// ADMIN FUNCTIONS
-// ==============================
-function get_basic_stats() {
-    $stats = get_stats();
-    $users_data = json_decode(file_get_contents(USERS_FILE), true);
-    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
-    
-    return [
-        'movies' => $stats['total_movies'] ?? 0,
-        'users' => count($users_data['users'] ?? []),
-        'searches' => $stats['total_searches'] ?? 0,
-        'pending_requests' => count($requests['pending'] ?? []),
-        'approved_requests' => count($requests['approved'] ?? [])
-    ];
-}
-
-function show_admin_panel($chat_id) {
-    $stats = get_basic_stats();
-    
-    $panel = "👑 <b>ADMIN PANEL</b>\n\n";
-    $panel = $panel . "📊 <b>Statistics:</b>\n";
-    $panel = $panel . "├ 🎬 Movies: <b>{$stats['movies']}</b>\n";
-    $panel = $panel . "├ 👥 Users: <b>{$stats['users']}</b>\n";
-    $panel = $panel . "├ 🔍 Searches: <b>{$stats['searches']}</b>\n";
-    $panel = $panel . "├ ⏳ Pending: <b>{$stats['pending_requests']}</b>\n";
-    $panel = $panel . "└ ✅ Approved: <b>{$stats['approved_requests']}</b>\n\n";
-    $panel = $panel . "🕒 Last Updated: " . date('d-m-Y H:i:s');
     
     $keyboard = [
         'inline_keyboard' => [
-            [['text' => "📥 Pending Requests ({$stats['pending_requests']})", 'callback_data' => 'admin_pending']],
-            [['text' => "✅ Bulk Approve (5)", 'callback_data' => 'bulk_approve_5'],
-             ['text' => "✅ Bulk Approve (10)", 'callback_data' => 'bulk_approve_10']],
-            [['text' => "✅ Approve All", 'callback_data' => 'approve_all'],
-             ['text' => "📊 Full Stats", 'callback_data' => 'admin_stats']],
-            [['text' => "📢 Broadcast", 'callback_data' => 'admin_broadcast'],
-             ['text' => "🔄 System Info", 'callback_data' => 'system_info']],
-            [['text' => "📁 CSV Format", 'callback_data' => 'admin_csv'],
-             ['text' => "🔄 Refresh", 'callback_data' => 'refresh_admin']]
+            [
+                ['text' => '🎬 All', 'callback_data' => 'csv_filter_all'],
+                ['text' => '📅 2025', 'callback_data' => 'csv_filter_2025'],
+                ['text' => '📅 2024', 'callback_data' => 'csv_filter_2024']
+            ],
+            [
+                ['text' => '🇮🇳 Hindi', 'callback_data' => 'csv_filter_hindi'],
+                ['text' => '🇬🇧 English', 'callback_data' => 'csv_filter_english']
+            ],
+            [
+                ['text' => '⬅️ Prev', 'callback_data' => 'csv_prev_' . ($page - 1) . '_' . $filter],
+                ['text' => "📄 {$page}/{$total_pages}", 'callback_data' => 'csv_current'],
+                ['text' => 'Next ➡️', 'callback_data' => 'csv_next_' . ($page + 1) . '_' . $filter]
+            ],
+            [
+                ['text' => '📥 Export CSV', 'callback_data' => 'csv_export'],
+                ['text' => '🔄 Refresh', 'callback_data' => 'csv_refresh_' . $page . '_' . $filter]
+            ]
         ]
     ];
     
-    sendMessage($chat_id, $panel, $keyboard, 'HTML');
+    sendMessage($chat_id, $message, $keyboard, 'HTML');
 }
 
 // ==============================
@@ -1046,11 +1349,11 @@ function send_daily_digest() {
         $users_data = json_decode(file_get_contents(USERS_FILE), true);
         foreach ($users_data['users'] as $uid => $ud) {
             $msg = "📅 Daily Movie Digest\n\n";
-            $msg = $msg . "📢 Join our channel: @EntertainmentTadka786\n\n";
-            $msg = $msg . "🎬 Yesterday's Uploads (" . $yesterday . "):\n";
-            foreach (array_slice($y_movies,0,10) as $m) $msg = $msg . "• " . $m . "\n";
-            if (count($y_movies)>10) $msg = $msg . "• ... and " . (count($y_movies)-10) . " more\n";
-            $msg = $msg . "\n🔥 Total: " . count($y_movies) . " movies";
+            $msg .= "📢 Join our channel: @EntertainmentTadka786\n\n";
+            $msg .= "🎬 Yesterday's Uploads (" . $yesterday . "):\n";
+            foreach (array_slice($y_movies,0,10) as $m) $msg .= "• " . $m . "\n";
+            if (count($y_movies)>10) $msg .= "• ... and " . (count($y_movies)-10) . " more\n";
+            $msg .= "\n🔥 Total: " . count($y_movies) . " movies";
             sendMessage($uid, $msg, null, 'HTML');
         }
     }
@@ -1059,7 +1362,7 @@ function send_daily_digest() {
 // ==============================
 // Other commands
 // ==============================
-function check_date($chat_id) {
+function check_date($chat_id, $page = 1) {
     if (!file_exists(CSV_FILE)) { 
         sendMessage($chat_id, "⚠️ Abhi tak koi data save nahi hua."); 
         return; 
@@ -1080,25 +1383,156 @@ function check_date($chat_id) {
     }
     
     krsort($date_counts);
-    $msg = "📅 Movies Upload Record\n\n";
-    $total_days = 0; 
+    $dates = array_keys($date_counts);
+    $total = count($dates);
+    $items_per_page = 5;
+    $total_pages = ceil($total / $items_per_page);
+    $page = max(1, min($page, $total_pages));
+    $start = ($page - 1) * $items_per_page;
+    $page_dates = array_slice($dates, $start, $items_per_page, true);
+    
+    $msg = "📅 <b>Movies Upload Record (Page {$page}/{$total_pages})</b>\n\n";
     $total_movies = 0;
     
-    foreach ($date_counts as $date => $count) { 
-        $msg = $msg . "➡️ " . $date . ": " . $count . " movies\n"; 
-        $total_days = $total_days + 1; 
-        $total_movies = $total_movies + $count; 
+    foreach ($page_dates as $date) {
+        $count = $date_counts[$date];
+        $msg .= "➡️ <b>{$date}</b>: {$count} movies\n";
+        $total_movies += $count;
     }
     
-    $msg = $msg . "\n📊 Summary:\n";
-    $msg = $msg . "• Total Days: " . $total_days . "\n";
-    $msg = $msg . "• Total Movies: " . $total_movies . "\n";
-    $msg = $msg . "• Average per day: " . round($total_movies / max(1,$total_days),2);
-    sendMessage($chat_id, $msg, null, 'HTML');
+    $msg .= "\n📊 <b>Page Summary:</b>\n";
+    $msg .= "• Movies: {$total_movies}\n";
+    $msg .= "• Days: " . count($page_dates);
+    
+    $keyboard = [
+        'inline_keyboard' => [
+            [
+                ['text' => '📅 Month View', 'callback_data' => 'date_month'],
+                ['text' => '📊 Year View', 'callback_data' => 'date_year']
+            ],
+            [
+                ['text' => '⬅️ Prev', 'callback_data' => 'date_prev_' . ($page - 1)],
+                ['text' => "📄 {$page}/{$total_pages}", 'callback_data' => 'date_current'],
+                ['text' => 'Next ➡️', 'callback_data' => 'date_next_' . ($page + 1)]
+            ],
+            [
+                ['text' => '🔄 Refresh', 'callback_data' => 'date_refresh_' . $page],
+                ['text' => '📥 Export', 'callback_data' => 'date_export']
+            ]
+        ]
+    ];
+    
+    sendMessage($chat_id, $msg, $keyboard, 'HTML');
 }
 
 function total_uploads($chat_id, $page = 1, $username = null) {
     totalupload_controller($chat_id, $page, $username);
+}
+
+function show_all_channels($chat_id, $view = 'public', $is_admin = false) {
+    $all = get_all_channels();
+    
+    if ($view == 'public') {
+        $msg = "📢 <b>Public Channels</b>\n\n";
+        $msg .= "┌─────────────────────┐\n";
+        foreach ($all['public'] as $ch) {
+            $status = $ch['header'] == 'on' ? '✅ Active' : '⭕ Inactive';
+            $msg .= "│ {$ch['icon']} {$ch['name']}\n";
+            $msg .= "│ {$ch['username']} ({$status})\n";
+            $msg .= "├─────────────────────┤\n";
+        }
+        $msg = rtrim($msg, "├─────────────────────┤\n") . "\n└─────────────────────┘\n\n";
+        
+        $keyboard = [
+            'inline_keyboard' => []
+        ];
+        
+        foreach ($all['public'] as $ch) {
+            $keyboard['inline_keyboard'][] = [
+                ['text' => $ch['icon'] . ' ' . $ch['name'], 'url' => get_channel_link($ch['id'])]
+            ];
+        }
+        
+        if ($is_admin) {
+            $keyboard['inline_keyboard'][] = [
+                ['text' => '🔒 Private Channels', 'callback_data' => 'channels_private']
+            ];
+        }
+        
+        $keyboard['inline_keyboard'][] = [
+            ['text' => '🔄 Refresh', 'callback_data' => 'channels_refresh_public'],
+            ['text' => '📊 Stats', 'callback_data' => 'channels_stats']
+        ];
+        
+    } else {
+        $msg = "🔒 <b>Private Channels (Admin)</b>\n\n";
+        $msg .= "┌─────────────────────┐\n";
+        foreach ($all['private'] as $ch) {
+            $msg .= "│ {$ch['name']}\n";
+            $msg .= "│ <code>{$ch['id']}</code>\n";
+            $msg .= "├─────────────────────┤\n";
+        }
+        $msg = rtrim($msg, "├─────────────────────┤\n") . "\n└─────────────────────┘\n\n";
+        
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => '📢 Public Channels', 'callback_data' => 'channels_public'],
+                    ['text' => '🔄 Refresh', 'callback_data' => 'channels_refresh_private']
+                ]
+            ]
+        ];
+    }
+    
+    $keyboard['inline_keyboard'][] = [
+        ['text' => '❓ Help', 'callback_data' => 'show_help'],
+        ['text' => '🏠 Home', 'callback_data' => 'search_help']
+    ];
+    
+    sendMessage($chat_id, $msg, $keyboard, 'HTML');
+}
+
+function show_admin_panel($chat_id) {
+    $stats = get_basic_stats();
+    
+    $panel = "👑 <b>ADMIN PANEL</b>\n\n";
+    $panel .= "📊 <b>Statistics:</b>\n";
+    $panel .= "├ 🎬 Movies: <b>{$stats['movies']}</b>\n";
+    $panel .= "├ 👥 Users: <b>{$stats['users']}</b>\n";
+    $panel .= "├ 🔍 Searches: <b>{$stats['searches']}</b>\n";
+    $panel .= "├ ⏳ Pending: <b>{$stats['pending_requests']}</b>\n";
+    $panel .= "└ ✅ Approved: <b>{$stats['approved_requests']}</b>\n\n";
+    $panel .= "🕒 Last Updated: " . date('d-m-Y H:i:s');
+    
+    $keyboard = [
+        'inline_keyboard' => [
+            [['text' => "📥 Pending Requests ({$stats['pending_requests']})", 'callback_data' => 'admin_pending']],
+            [['text' => "✅ Bulk Approve (5)", 'callback_data' => 'bulk_approve_5'],
+             ['text' => "✅ Bulk Approve (10)", 'callback_data' => 'bulk_approve_10']],
+            [['text' => "✅ Approve All", 'callback_data' => 'approve_all'],
+             ['text' => "📊 Full Stats", 'callback_data' => 'admin_stats']],
+            [['text' => "📢 Broadcast", 'callback_data' => 'admin_broadcast'],
+             ['text' => "🔄 System Info", 'callback_data' => 'system_info']],
+            [['text' => "📁 CSV Format", 'callback_data' => 'admin_csv'],
+             ['text' => "🔄 Refresh", 'callback_data' => 'refresh_admin']]
+        ]
+    ];
+    
+    sendMessage($chat_id, $panel, $keyboard, 'HTML');
+}
+
+function get_basic_stats() {
+    $stats = get_stats();
+    $users_data = json_decode(file_get_contents(USERS_FILE), true);
+    $requests = json_decode(file_get_contents(REQUESTS_FILE), true);
+    
+    return [
+        'movies' => $stats['total_movies'] ?? 0,
+        'users' => count($users_data['users'] ?? []),
+        'searches' => $stats['total_searches'] ?? 0,
+        'pending_requests' => count($requests['pending'] ?? []),
+        'approved_requests' => count($requests['approved'] ?? [])
+    ];
 }
 
 // ==============================
@@ -1150,19 +1584,6 @@ function is_valid_movie_query($text) {
 // Main update processing (webhook)
 // ==============================
 $update = json_decode(file_get_contents('php://input'), true);
-
-// Deploy notification
-if (php_sapi_name() === 'cli' || isset($_GET['deploy'])) {
-    $admin_id = ADMIN_ID;
-    
-    $msg = "🚀 Bot Successfully Deployed on Render.com!\n\n";
-    $msg = $msg . "📅 Time: " . date('Y-m-d H:i:s') . "\n";
-    $msg = $msg . "✅ Status: Running\n";
-    $msg = $msg . "📊 PHP Version: " . phpversion() . "\n";
-    $msg = $msg . "📁 CSV Movies: " . (file_exists(CSV_FILE) ? count(file(CSV_FILE)) - 1 : 0);
-    
-    file_get_contents("https://api.telegram.org/bot" . BOT_TOKEN . "/sendMessage?chat_id=" . $admin_id . "&text=" . urlencode($msg));
-}
 
 if ($update) {
     get_cached_movies();
@@ -1260,134 +1681,108 @@ if ($update) {
             if ($command == '/start') {
                 sendTypingAction($chat_id);
                 
-                $welcome = "```\n";
-                $welcome = $welcome . "┌─────────────────────────────────────────────────────┐\n";
-                $welcome = $welcome . "│                                                     │\n";
-                $welcome = $welcome . "│  🎬 Welcome to Entertainment Tadka!                │\n";
-                $welcome = $welcome . "│                                                     │\n";
-                $welcome = $welcome . "│  📢 How to use this bot:                            │\n";
-                $welcome = $welcome . "│  • Simply type any movie name                       │\n";
-                $welcome = $welcome . "│  • Use English or Hindi                             │\n";
-                $welcome = $welcome . "│  • Partial names also work                          │\n";
-                $welcome = $welcome . "│                                                     │\n";
-                $welcome = $welcome . "│  🔍 Examples:                                       │\n";
-                $welcome = $welcome . "│  • MANDALA MURDER 2025                              │\n";
-                $welcome = $welcome . "│  • SQUID GMAES ALL SEASON                           │\n";
-                $welcome = $welcome . "│  • ZEBRA 2024                                       │\n";
-                $welcome = $welcome . "│  • SHOW TIME 2025                                   │\n";
-                $welcome = $welcome . "│  • ANDHADHUN 2018                                   │\n";
-                $welcome = $welcome . "│                                                     │\n";
-                $welcome = $welcome . "│  📢 Join Our Channels:                              │\n";
-                $welcome = $welcome . "│  🍿 Main: @EntertainmentTadka786                    │\n";
-                $welcome = $welcome . "│  📥 Requests: @EntertainmentTadka7860               │\n";
-                $welcome = $welcome . "│  🎭 Theater: @threater_print_movies                 │\n";
-                $welcome = $welcome . "│  🔒 Backup: @ETBackup                               │\n";
-                $welcome = $welcome . "│                                                     │\n";
-                $welcome = $welcome . "│  💬 Need help? Use /help                            │\n";
-                $welcome = $welcome . "│                                                     │\n";
-                $welcome = $welcome . "└─────────────────────────────────────────────────────┘\n";
-                $welcome = $welcome . "```";
+                $welcome = "🌟✨🎬 <b>WELCOME TO THE CLUB</b> 🎬✨🌟\n\n";
+                $welcome .= "👇 <b>Aap kya dekhna chahenge?</b>\n\n";
+                $welcome .= "🎯 <b>Search Tips:</b>\n";
+                $welcome .= "🔸 Bas movie ka naam likho\n";
+                $welcome .= "🔸 Hindi ho ya English, dono chalega\n";
+                $welcome .= "🔸 Adhoore naam bhi kaam karenge\n\n";
+                $welcome .= "🔥 <b>Examples:</b>\n";
+                $welcome .= "▶️ Mandala Murder 2025\n";
+                $welcome .= "▶️ Squid Game\n";
+                $welcome .= "▶️ Zebra 2024\n";
+                $welcome .= "▶️ Andhadhun\n\n";
+                $welcome .= "📢 <b>Join Our Family:</b>\n";
+                $welcome .= "🍿 Main Channel    : @EntertainmentTadka786\n";
+                $welcome .= "🎬 Serial Channel  : @Entertainment_Tadka_Serial_786\n";
+                $welcome .= "🎭 Theater Prints  : @threater_print_movies\n";
+                $welcome .= "🔒 Backup Channel  : @ETBackup\n";
+                $welcome .= "📥 Request Group   : @EntertainmentTadka7860\n\n";
+                $welcome .= "💬 Need help? Just type /help";
                 
                 $keyboard = [
                     'inline_keyboard' => [
                         [
                             ['text' => '🔍 Search Movies', 'callback_data' => 'search_help'],
-                            ['text' => '🍿 Main Channel', 'url' => 'https://t.me/EntertainmentTadka786']
+                            ['text' => '🍿 Main', 'url' => 'https://t.me/EntertainmentTadka786']
                         ],
                         [
-                            ['text' => '📥 Requests', 'url' => 'https://t.me/EntertainmentTadka7860'],
+                            ['text' => '🎬 Serial', 'url' => 'https://t.me/Entertainment_Tadka_Serial_786'],
                             ['text' => '🎭 Theater', 'url' => 'https://t.me/threater_print_movies']
                         ],
                         [
                             ['text' => '🔒 Backup', 'url' => 'https://t.me/ETBackup'],
+                            ['text' => '📥 Requests', 'url' => 'https://t.me/EntertainmentTadka7860']
+                        ],
+                        [
                             ['text' => '❓ Help', 'callback_data' => 'show_help']
                         ]
                     ]
                 ];
                 
-                sendMessage($chat_id, $welcome, $keyboard, 'MarkdownV2');
+                sendMessage($chat_id, $welcome, $keyboard, 'HTML');
                 update_user_points($user_id, 'daily_login');
             }
             elseif ($command == '/help') {
                 sendTypingAction($chat_id);
                 
-                $help_menu = "```\n";
-                $help_menu = $help_menu . "┌─────────────────────────────────────────────────────┐\n";
-                $help_menu = $help_menu . "│                                                     │\n";
-                $help_menu = $help_menu . "│  🤖 Entertainment Tadka Bot - Help                  │\n";
-                $help_menu = $help_menu . "│                                                     │\n";
-                $help_menu = $help_menu . "│  📢 Available Commands:                             │\n";
-                $help_menu = $help_menu . "│                                                     │\n";
-                $help_menu = $help_menu . "│  🔍 SEARCH:                                         │\n";
-                $help_menu = $help_menu . "│  • /search movie - Search movies                    │\n";
-                $help_menu = $help_menu . "│  • Just type name - Quick search                    │\n";
-                $help_menu = $help_menu . "│                                                     │\n";
-                $help_menu = $help_menu . "│  📁 BROWSE:                                         │\n";
-                $help_menu = $help_menu . "│  • /totaluploads - All movies                       │\n";
-                $help_menu = $help_menu . "│  • /checkcsv - Database view                        │\n";
-                $help_menu = $help_menu . "│                                                     │\n";
-                $help_menu = $help_menu . "│  📝 REQUEST:                                        │\n";
-                $help_menu = $help_menu . "│  • /request movie - Request movie                   │\n";
-                $help_menu = $help_menu . "│  • /myrequests - Your requests                      │\n";
-                $help_menu = $help_menu . "│  • /requestlimit - Daily limit                      │\n";
-                $help_menu = $help_menu . "│                                                     │\n";
-                $help_menu = $help_menu . "│  📢 CHANNELS:                                       │\n";
-                $help_menu = $help_menu . "│  • /all_channels - All channels info                │\n";
-                $help_menu = $help_menu . "│                                                     │\n";
-                $help_menu = $help_menu . "│  ❓ OTHER:                                           │\n";
-                $help_menu = $help_menu . "│  • /start - Welcome                                 │\n";
-                $help_menu = $help_menu . "│  • /help - This menu                                │\n";
-                $help_menu = $help_menu . "│                                                     │\n";
-                $help_menu = $help_menu . "└─────────────────────────────────────────────────────┘\n";
-                $help_menu = $help_menu . "```";
+                $help_menu = "🌟✨🎬 <b>HELP & COMMANDS</b> 🎬✨🌟\n\n";
+                $help_menu .= "👇 <b>Aap kya karna chahenge?</b>\n\n";
+                $help_menu .= "🔍 <b>SEARCH COMMANDS</b>\n";
+                $help_menu .= "════════════════════\n";
+                $help_menu .= "▶️ /search [movie] - Movie search karo\n";
+                $help_menu .= "▶️ Direct type - Bas naam likho\n\n";
+                $help_menu .= "📁 <b>BROWSE COMMANDS</b>\n";
+                $help_menu .= "════════════════════\n";
+                $help_menu .= "▶️ /totaluploads - Saari movies dekho\n";
+                $help_menu .= "▶️ /checkcsv - Database check karo\n\n";
+                $help_menu .= "📝 <b>REQUEST COMMANDS</b>\n";
+                $help_menu .= "════════════════════\n";
+                $help_menu .= "▶️ /request [movie] - Movie request karo\n";
+                $help_menu .= "▶️ /myrequests - Apni requests dekho\n";
+                $help_menu .= "▶️ /requestlimit - Daily limit check\n\n";
+                $help_menu .= "📢 <b>CHANNEL COMMANDS</b>\n";
+                $help_menu .= "════════════════════\n";
+                $help_menu .= "▶️ /all_channels - Saare channels dekho\n\n";
+                $help_menu .= "❓ <b>OTHER COMMANDS</b>\n";
+                $help_menu .= "════════════════════\n";
+                $help_menu .= "▶️ /start - Welcome message\n";
+                $help_menu .= "▶️ /help - Ye help menu\n\n";
+                $help_menu .= "━━━━━━━━━━━━━━━━━━━━\n";
+                $help_menu .= "📢 <b>Our Channels:</b>\n";
+                $help_menu .= "🍿 Main: @EntertainmentTadka786\n";
+                $help_menu .= "🎬 Serial: @Entertainment_Tadka_Serial_786\n";
+                $help_menu .= "🎭 Theater: @threater_print_movies\n";
+                $help_menu .= "🔒 Backup: @ETBackup\n";
+                $help_menu .= "📥 Requests: @EntertainmentTadka7860\n\n";
+                $help_menu .= "💬 Need help? @EntertainmentTadka7860";
                 
                 $keyboard = [
                     'inline_keyboard' => [
                         [
                             ['text' => '🍿 Main', 'url' => 'https://t.me/EntertainmentTadka786'],
-                            ['text' => '📥 Requests', 'url' => 'https://t.me/EntertainmentTadka7860'],
+                            ['text' => '🎬 Serial', 'url' => 'https://t.me/Entertainment_Tadka_Serial_786'],
                             ['text' => '🎭 Theater', 'url' => 'https://t.me/threater_print_movies']
                         ],
                         [
                             ['text' => '🔒 Backup', 'url' => 'https://t.me/ETBackup'],
+                            ['text' => '📥 Requests', 'url' => 'https://t.me/EntertainmentTadka7860'],
                             ['text' => '🔍 Quick Search', 'switch_inline_query' => '']
                         ]
                     ]
                 ];
                 
-                sendMessage($chat_id, $help_menu, $keyboard, 'MarkdownV2');
+                sendMessage($chat_id, $help_menu, $keyboard, 'HTML');
             }
             elseif ($command == '/all_channels') {
-                $all = get_all_channels();
-                
-                $msg = "📢 <b>All Channels</b>\n\n";
-                $msg = $msg . "🍿 <b>Public Channels:</b>\n";
-                foreach ($all['public'] as $ch) {
-                    $status = $ch['header'] == 'on' ? '✅ Active' : '⭕ Inactive';
-                    $msg = $msg . "├ " . $ch['name'] . ": " . $ch['username'] . " (" . $status . ")\n";
-                }
-                
-                if ($is_admin) {
-                    $msg = $msg . "\n🔒 <b>Private Channels (Admin):</b>\n";
-                    foreach ($all['private'] as $ch) {
-                        $msg = $msg . "├ " . $ch['name'] . ": <code>" . $ch['id'] . "</code>\n";
-                    }
-                }
-                
-                $keyboard = ['inline_keyboard' => []];
-                foreach ($all['public'] as $ch) {
-                    $keyboard['inline_keyboard'][] = [
-                        ['text' => $ch['name'], 'url' => get_channel_link($ch['id'])]
-                    ];
-                }
-                
-                sendMessage($chat_id, $msg, $keyboard, 'HTML');
+                show_all_channels($chat_id, 'public', $is_admin);
             }
             elseif ($command == '/checkdate') check_date($chat_id);
             elseif ($command == '/totalupload' || $command == '/totaluploads') total_uploads($chat_id, 1, $username);
             elseif ($command == '/checkcsv') {
-                $show_all = (isset($parts[1]) && strtolower($parts[1]) == 'all');
-                show_csv_data($chat_id, $show_all);
+                $page = isset($parts[1]) && is_numeric($parts[1]) ? (int)$parts[1] : 1;
+                $filter = isset($parts[2]) ? $parts[2] : 'all';
+                show_csv_data($chat_id, $page, $filter);
             }
             elseif ($command == '/stats' && $is_admin) admin_stats($chat_id);
             
@@ -1400,78 +1795,28 @@ if ($update) {
                     return;
                 }
                 
-                if (!can_user_request($user_id)) {
-                    $used = check_remaining_requests($user_id);
-                    $limit_msg = "❌ Daily request limit reached!\n";
-                    $limit_msg = $limit_msg . "Used: " . $used . "/" . DAILY_REQUEST_LIMIT . "\n";
-                    $limit_msg = $limit_msg . "Use /requestlimit to check status";
-                    sendMessage($chat_id, $limit_msg);
-                    return;
+                $result = add_movie_request($user_id, $movie_name, $username);
+                
+                if ($result['success']) {
+                    $msg = "✅ <b>Request Submitted!</b>\n\n";
+                    $msg .= "🎬 Movie: " . htmlspecialchars($movie_name) . "\n";
+                    $msg .= "📢 You'll be notified when added.";
+                    sendMessage($chat_id, $msg, null, 'HTML');
+                } else {
+                    sendMessage($chat_id, "❌ " . $result['message']);
                 }
-                
-                $request_id = add_movie_request($user_id, $username, $movie_name);
-                $used = check_remaining_requests($user_id) + 1;
-                
-                $msg = "✅ <b>Request Submitted!</b>\n\n";
-                $msg = $msg . "🎬 Movie: " . htmlspecialchars($movie_name) . "\n";
-                $msg = $msg . "🆔 Request ID: <code>" . $request_id . "</code>\n";
-                $msg = $msg . "📊 Daily Limit: " . $used . "/" . DAILY_REQUEST_LIMIT . "\n\n";
-                $msg = $msg . "📢 Join: @EntertainmentTadka7860";
-                
-                sendMessage($chat_id, $msg, null, 'HTML');
-                
-                $admin_msg = "📥 <b>New Request</b>\n";
-                $admin_msg = $admin_msg . "👤 @{$username}\n";
-                $admin_msg = $admin_msg . "🎬 {$movie_name}\n";
-                $admin_msg = $admin_msg . "🆔 {$request_id}";
-                sendMessage(ADMIN_ID, $admin_msg, null, 'HTML');
             }
             elseif ($command == '/myrequests') {
-                show_user_requests($chat_id, $user_id);
+                $page = isset($parts[1]) && is_numeric($parts[1]) ? (int)$parts[1] : 1;
+                show_user_requests($chat_id, $user_id, $page);
             }
             elseif ($command == '/requestlimit') {
-                $used = check_remaining_requests($user_id);
-                $remaining = DAILY_REQUEST_LIMIT - $used;
-                
-                $msg = "📊 <b>Request Limit Status</b>\n\n";
-                $msg = $msg . "✅ Used: " . $used . "/" . DAILY_REQUEST_LIMIT . "\n";
-                $msg = $msg . "⏳ Remaining: " . $remaining . "\n";
-                $msg = $msg . "📅 Reset: Tomorrow 12:00 AM";
-                
-                sendMessage($chat_id, $msg, null, 'HTML');
+                check_request_limit($chat_id, $user_id);
             }
             
             // Admin commands
-            elseif (($command == '/pending' || $command == '/pending_requests') && $is_admin) {
-                $pending = get_pending_requests();
-                
-                if (empty($pending)) {
-                    sendMessage($chat_id, "📭 No pending requests.");
-                    return;
-                }
-                
-                $msg = "⏳ <b>Pending Requests: " . count($pending) . "</b>\n\n";
-                foreach (array_slice($pending, 0, 10) as $req) {
-                    $msg = $msg . "🆔 <code>" . $req['id'] . "</code>\n";
-                    $msg = $msg . "👤 @" . $req['username'] . "\n";
-                    $msg = $msg . "🎬 " . htmlspecialchars($req['movie']) . "\n";
-                    $msg = $msg . "📅 " . date('d-m H:i', strtotime($req['date'])) . "\n━━━━━━━━━\n";
-                }
-                
-                if (count($pending) > 10) {
-                    $msg = $msg . "\n... and " . (count($pending) - 10) . " more";
-                }
-                
-                $keyboard = [
-                    'inline_keyboard' => [
-                        [['text' => "✅ Bulk Approve (5)", 'callback_data' => 'bulk_approve_5'],
-                         ['text' => "✅ Bulk Approve (10)", 'callback_data' => 'bulk_approve_10']],
-                        [['text' => "✅ Approve All", 'callback_data' => 'approve_all'],
-                         ['text' => "🔄 Refresh", 'callback_data' => 'refresh_pending']]
-                    ]
-                ];
-                
-                sendMessage($chat_id, $msg, $keyboard, 'HTML');
+            elseif ($command == '/pending' && $is_admin) {
+                show_pending_requests($chat_id);
             }
             elseif ($command == '/admin' && $is_admin) {
                 show_admin_panel($chat_id);
@@ -1479,23 +1824,7 @@ if ($update) {
             elseif (strpos($command, '/bulk_approve ') === 0 && $is_admin) {
                 $count = (int)substr($command, 14);
                 if ($count <= 0) $count = 5;
-                
-                $pending = get_pending_requests($count);
-                $request_ids = array_column($pending, 'id');
-                
-                if (empty($request_ids)) {
-                    sendMessage($chat_id, "📭 No pending requests to approve.");
-                    return;
-                }
-                
-                $approved = approve_requests($request_ids);
-                
-                foreach ($approved as $req) {
-                    $user_msg = "✅ Your request '" . $req['movie'] . "' has been approved!";
-                    sendMessage($req['user_id'], $user_msg);
-                }
-                
-                sendMessage($chat_id, "✅ Approved " . count($approved) . " requests!");
+                bulk_approve_requests($chat_id, $count);
             }
             elseif (strpos($command, '/search ') === 0) {
                 $search_query = substr($text, 8);
@@ -1523,6 +1852,7 @@ if ($update) {
 
         global $movie_messages;
 
+        // Movie delivery callback
         if (strpos($data, 'get_') === 0) {
             $movie_name = substr($data, 4);
             $movie_lower = strtolower($movie_name);
@@ -1535,21 +1865,62 @@ if ($update) {
                     usleep(200000);
                     $cnt = $cnt + 1;
                 }
-                sendMessage($chat_id, "✅ '" . $movie_name . "' ke " . $cnt . " messages forward ho gaye!");
-                answerCallbackQuery($query['id'], "🎬 " . $cnt . " items sent!");
+                sendMessage($chat_id, "✅ '$movie_name' ke $cnt messages forward ho gaye!");
+                answerCallbackQuery($query['id'], "🎬 $cnt items sent!");
             } else {
                 answerCallbackQuery($query['id'], "❌ Movie not available");
             }
         }
+        
+        // Search pagination
+        elseif (preg_match('/^search_(.+)_(\d+)$/', $data, $matches)) {
+            $query = urldecode($matches[1]);
+            $page = (int)$matches[2];
+            
+            // Re-run search to get results
+            $found = smart_search($query);
+            $results = [];
+            foreach ($found as $movie_name => $data) {
+                $entries = $movie_messages[strtolower($movie_name)] ?? [];
+                foreach ($entries as $entry) {
+                    $results[] = $entry;
+                }
+            }
+            $results = array_map("unserialize", array_unique(array_map("serialize", $results)));
+            
+            show_search_results($chat_id, $results, $query, $page);
+            answerCallbackQuery($query['id'], "Page $page");
+        }
+
+        // Send all search results
+        elseif (preg_match('/^sendall_(.+)$/', $data, $matches)) {
+            $query = urldecode($matches[1]);
+            
+            $found = smart_search($query);
+            $results = [];
+            foreach ($found as $movie_name => $data) {
+                $entries = $movie_messages[strtolower($movie_name)] ?? [];
+                foreach ($entries as $entry) {
+                    $results[] = $entry;
+                }
+            }
+            $results = array_map("unserialize", array_unique(array_map("serialize", $results)));
+            
+            sendMessage($chat_id, "⏳ Sending all " . count($results) . " movies...");
+            bulk_send_movies($chat_id, $results, $username);
+            answerCallbackQuery($query['id'], "✅ All movies sent!");
+        }
+        
+        // Total upload pagination
         elseif (strpos($data, 'tu_prev_') === 0) {
             $page = (int)str_replace('tu_prev_', '', $data);
             totalupload_controller($chat_id, $page, $username);
-            answerCallbackQuery($query['id'], "Page " . $page);
+            answerCallbackQuery($query['id'], "Page $page");
         }
         elseif (strpos($data, 'tu_next_') === 0) {
             $page = (int)str_replace('tu_next_', '', $data);
             totalupload_controller($chat_id, $page, $username);
-            answerCallbackQuery($query['id'], "Page " . $page);
+            answerCallbackQuery($query['id'], "Page $page");
         }
         elseif (strpos($data, 'tu_view_') === 0) {
             $page = (int)str_replace('tu_view_', '', $data);
@@ -1572,28 +1943,30 @@ if ($update) {
             sendMessage($chat_id, "✅ Pagination stopped. Type /totalupload to start again.");
             answerCallbackQuery($query['id'], "Stopped");
         }
+        
+        // Help and search tips
         elseif ($data == 'search_help') {
             $help_text = "🔍 <b>Search Tips:</b>\n\n";
-            $help_text = $help_text . "• Type full movie name: <code>Mandala Murder 2025</code>\n";
-            $help_text = $help_text . "• Type partial: <code>Squid Game</code>\n";
-            $help_text = $help_text . "• Add year: <code>Zebra 2024</code>\n";
-            $help_text = $help_text . "• Hindi/English dono use karo\n\n";
-            $help_text = $help_text . "Example: <i>Andhadhun 2018</i>";
+            $help_text .= "• Type full movie name: <code>Mandala Murder 2025</code>\n";
+            $help_text .= "• Type partial: <code>Squid Game</code>\n";
+            $help_text .= "• Add year: <code>Zebra 2024</code>\n";
+            $help_text .= "• Hindi/English dono use karo\n\n";
+            $help_text .= "Example: <i>Andhadhun 2018</i>";
             
             answerCallbackQuery($query['id'], "🔍 Search Tips!");
             sendMessage($chat_id, $help_text, null, 'HTML');
         }
         elseif ($data == 'show_help') {
             $help_text = "❓ <b>Available Commands:</b>\n\n";
-            $help_text = $help_text . "/start - Welcome message\n";
-            $help_text = $help_text . "/checkdate - Date-wise stats\n";
-            $help_text = $help_text . "/totalupload - Upload statistics\n";
-            $help_text = $help_text . "/checkcsv - Check movie list\n";
-            $help_text = $help_text . "/request - Request movie\n";
-            $help_text = $help_text . "/myrequests - Your requests\n";
-            $help_text = $help_text . "/requestlimit - Daily limit\n";
-            $help_text = $help_text . "/all_channels - All channels\n";
-            $help_text = $help_text . "/help - This message";
+            $help_text .= "/start - Welcome message\n";
+            $help_text .= "/checkdate - Date-wise stats\n";
+            $help_text .= "/totalupload - Upload statistics\n";
+            $help_text .= "/checkcsv - Check movie list\n";
+            $help_text .= "/request - Request movie\n";
+            $help_text .= "/myrequests - Your requests\n";
+            $help_text .= "/requestlimit - Daily limit\n";
+            $help_text .= "/all_channels - All channels\n";
+            $help_text .= "/help - This message";
             
             answerCallbackQuery($query['id'], "📋 Commands List");
             sendMessage($chat_id, $help_text, null, 'HTML');
@@ -1602,86 +1975,140 @@ if ($update) {
             answerCallbackQuery($query['id'], "You're on this page");
         }
         
-        // Admin callback handlers
+        // Date command callbacks
+        elseif (strpos($data, 'date_prev_') === 0) {
+            $page = (int)str_replace('date_prev_', '', $data);
+            check_date($chat_id, $page);
+            answerCallbackQuery($query['id'], "Page $page");
+        }
+        elseif (strpos($data, 'date_next_') === 0) {
+            $page = (int)str_replace('date_next_', '', $data);
+            check_date($chat_id, $page);
+            answerCallbackQuery($query['id'], "Page $page");
+        }
+        elseif ($data == 'date_month') {
+            check_date($chat_id, 1);
+            answerCallbackQuery($query['id'], "Month View");
+        }
+        elseif ($data == 'date_year') {
+            check_date($chat_id, 1);
+            answerCallbackQuery($query['id'], "Year View");
+        }
+        elseif (strpos($data, 'date_refresh_') === 0) {
+            $page = (int)str_replace('date_refresh_', '', $data);
+            check_date($chat_id, $page);
+            answerCallbackQuery($query['id'], "Refreshed");
+        }
+        elseif ($data == 'date_export') {
+            // Placeholder for export function
+            answerCallbackQuery($query['id'], "Export feature coming soon");
+        }
+
+        // CSV command callbacks
+        elseif (strpos($data, 'csv_prev_') === 0) {
+            $parts = explode('_', $data);
+            $page = (int)$parts[2];
+            $filter = $parts[3] ?? 'all';
+            show_csv_data($chat_id, $page, $filter);
+            answerCallbackQuery($query['id'], "Page $page");
+        }
+        elseif (strpos($data, 'csv_next_') === 0) {
+            $parts = explode('_', $data);
+            $page = (int)$parts[2];
+            $filter = $parts[3] ?? 'all';
+            show_csv_data($chat_id, $page, $filter);
+            answerCallbackQuery($query['id'], "Page $page");
+        }
+        elseif ($data == 'csv_filter_all') {
+            show_csv_data($chat_id, 1, 'all');
+            answerCallbackQuery($query['id'], "All Movies");
+        }
+        elseif ($data == 'csv_filter_2025') {
+            show_csv_data($chat_id, 1, '2025');
+            answerCallbackQuery($query['id'], "2025 Movies");
+        }
+        elseif ($data == 'csv_filter_2024') {
+            show_csv_data($chat_id, 1, '2024');
+            answerCallbackQuery($query['id'], "2024 Movies");
+        }
+        elseif ($data == 'csv_filter_hindi') {
+            show_csv_data($chat_id, 1, 'hindi');
+            answerCallbackQuery($query['id'], "Hindi Movies");
+        }
+        elseif ($data == 'csv_filter_english') {
+            show_csv_data($chat_id, 1, 'english');
+            answerCallbackQuery($query['id'], "English Movies");
+        }
+        elseif (strpos($data, 'csv_refresh_') === 0) {
+            $parts = explode('_', $data);
+            $page = (int)$parts[2];
+            $filter = $parts[3] ?? 'all';
+            show_csv_data($chat_id, $page, $filter);
+            answerCallbackQuery($query['id'], "Refreshed");
+        }
+        elseif ($data == 'csv_export') {
+            answerCallbackQuery($query['id'], "Export feature coming soon");
+        }
+        elseif ($data == 'csv_current') {
+            answerCallbackQuery($query['id'], "Current page");
+        }
+
+        // My Requests callbacks
+        elseif (strpos($data, 'myreq_prev_') === 0) {
+            $page = (int)str_replace('myreq_prev_', '', $data);
+            show_user_requests($chat_id, $user_id, $page);
+            answerCallbackQuery($query['id'], "Page $page");
+        }
+        elseif (strpos($data, 'myreq_next_') === 0) {
+            $page = (int)str_replace('myreq_next_', '', $data);
+            show_user_requests($chat_id, $user_id, $page);
+            answerCallbackQuery($query['id'], "Page $page");
+        }
+        elseif (strpos($data, 'myreq_refresh_') === 0) {
+            $page = (int)str_replace('myreq_refresh_', '', $data);
+            show_user_requests($chat_id, $user_id, $page);
+            answerCallbackQuery($query['id'], "Refreshed");
+        }
+        elseif ($data == 'myreq_current') {
+            answerCallbackQuery($query['id'], "Current page");
+        }
+        elseif (strpos($data, 'myreq_page_') === 0) {
+            $page = (int)str_replace('myreq_page_', '', $data);
+            show_user_requests($chat_id, $user_id, $page);
+            answerCallbackQuery($query['id'], "Your Requests");
+        }
+
+        // Request limit callbacks
+        elseif ($data == 'check_limit') {
+            check_request_limit($chat_id, $user_id);
+            answerCallbackQuery($query['id'], "Limit Status");
+        }
+        elseif ($data == 'request_prompt') {
+            sendMessage($chat_id, "🎬 Send movie name like:\n/request KGF 2");
+            answerCallbackQuery($query['id'], "Type /request [movie]");
+        }
+
+        // Admin panel callbacks
         elseif ($data == 'admin_pending' && $is_admin) {
-            $pending = get_pending_requests();
-            
-            if (empty($pending)) {
-                sendMessage($chat_id, "📭 No pending requests.");
-                answerCallbackQuery($query['id'], "No pending requests");
-                return;
-            }
-            
-            $msg = "⏳ <b>Pending Requests: " . count($pending) . "</b>\n\n";
-            foreach (array_slice($pending, 0, 10) as $req) {
-                $msg = $msg . "🆔 <code>" . $req['id'] . "</code>\n";
-                $msg = $msg . "👤 @" . $req['username'] . "\n";
-                $msg = $msg . "🎬 " . htmlspecialchars($req['movie']) . "\n";
-                $msg = $msg . "📅 " . date('d-m H:i', strtotime($req['date'])) . "\n━━━━━━━━━\n";
-            }
-            
-            sendMessage($chat_id, $msg, null, 'HTML');
-            answerCallbackQuery($query['id'], "Pending requests");
+            show_pending_requests($chat_id);
+            answerCallbackQuery($query['id'], "Pending Requests");
         }
         elseif ($data == 'bulk_approve_5' && $is_admin) {
-            $pending = get_pending_requests(5);
-            $request_ids = array_column($pending, 'id');
-            
-            if (empty($request_ids)) {
-                answerCallbackQuery($query['id'], "No pending requests!");
-                return;
-            }
-            
-            $approved = approve_requests($request_ids);
-            
-            foreach ($approved as $req) {
-                $user_msg = "✅ Your request '" . $req['movie'] . "' has been approved!";
-                sendMessage($req['user_id'], $user_msg);
-            }
-            
-            sendMessage($chat_id, "✅ Approved " . count($approved) . " requests!");
-            answerCallbackQuery($query['id'], "✅ Bulk approve completed");
+            bulk_approve_requests($chat_id, 5);
+            answerCallbackQuery($query['id'], "✅ Approved 5");
         }
         elseif ($data == 'bulk_approve_10' && $is_admin) {
-            $pending = get_pending_requests(10);
-            $request_ids = array_column($pending, 'id');
-            
-            if (empty($request_ids)) {
-                answerCallbackQuery($query['id'], "No pending requests!");
-                return;
-            }
-            
-            $approved = approve_requests($request_ids);
-            
-            foreach ($approved as $req) {
-                $user_msg = "✅ Your request '" . $req['movie'] . "' has been approved!";
-                sendMessage($req['user_id'], $user_msg);
-            }
-            
-            sendMessage($chat_id, "✅ Approved " . count($approved) . " requests!");
-            answerCallbackQuery($query['id'], "✅ Bulk approve completed");
+            bulk_approve_requests($chat_id, 10);
+            answerCallbackQuery($query['id'], "✅ Approved 10");
         }
         elseif ($data == 'approve_all' && $is_admin) {
             $pending = get_pending_requests();
-            $request_ids = array_column($pending, 'id');
-            
-            if (empty($request_ids)) {
-                answerCallbackQuery($query['id'], "No pending requests!");
-                return;
-            }
-            
-            $approved = approve_requests($request_ids);
-            
-            foreach ($approved as $req) {
-                $user_msg = "✅ Your request '" . $req['movie'] . "' has been approved!";
-                sendMessage($req['user_id'], $user_msg);
-            }
-            
-            sendMessage($chat_id, "✅ Approved all " . count($approved) . " requests!");
-            answerCallbackQuery($query['id'], "✅ All requests approved");
+            $count = count($pending);
+            bulk_approve_requests($chat_id, $count);
+            answerCallbackQuery($query['id'], "✅ Approved All");
         }
         elseif ($data == 'admin_stats' && $is_admin) {
-            admin_stats($chat_id);
+            admin_stats($chat_id, 'basic');
             answerCallbackQuery($query['id'], "Statistics");
         }
         elseif ($data == 'admin_broadcast' && $is_admin) {
@@ -1692,15 +2119,15 @@ if ($update) {
         }
         elseif ($data == 'system_info' && $is_admin) {
             $info = "🔄 <b>System Information</b>\n\n";
-            $info = $info . "├ PHP Version: " . phpversion() . "\n";
-            $info = $info . "├ Memory Limit: " . ini_get('memory_limit') . "\n";
-            $info = $info . "├ Max Execution: " . ini_get('max_execution_time') . "s\n";
-            $info = $info . "├ Upload Max: " . ini_get('upload_max_filesize') . "\n";
-            $info = $info . "├ Post Max: " . ini_get('post_max_size') . "\n";
-            $info = $info . "├ CSV Size: " . round(filesize(CSV_FILE)/1024, 2) . " KB\n";
-            $info = $info . "├ Total Lines: " . (file_exists(CSV_FILE) ? count(file(CSV_FILE)) - 1 : 0) . "\n";
-            $info = $info . "├ Pending Requests: " . count(get_pending_requests()) . "\n";
-            $info = $info . "└ Last Backup: " . (file_exists(BACKUP_DIR) ? count(glob(BACKUP_DIR . '*', GLOB_ONLYDIR)) : 0) . " backups";
+            $info .= "├ PHP Version: " . phpversion() . "\n";
+            $info .= "├ Memory Limit: " . ini_get('memory_limit') . "\n";
+            $info .= "├ Max Execution: " . ini_get('max_execution_time') . "s\n";
+            $info .= "├ Upload Max: " . ini_get('upload_max_filesize') . "\n";
+            $info .= "├ Post Max: " . ini_get('post_max_size') . "\n";
+            $info .= "├ CSV Size: " . round(filesize(CSV_FILE)/1024, 2) . " KB\n";
+            $info .= "├ Total Lines: " . (file_exists(CSV_FILE) ? count(file(CSV_FILE)) - 1 : 0) . "\n";
+            $info .= "├ Pending Requests: " . count(get_pending_requests()) . "\n";
+            $info .= "└ Last Backup: " . (file_exists(BACKUP_DIR) ? count(glob(BACKUP_DIR . '*', GLOB_ONLYDIR)) : 0) . " backups";
             
             sendMessage($chat_id, $info, null, 'HTML');
             answerCallbackQuery($query['id'], "System Info");
@@ -1708,9 +2135,9 @@ if ($update) {
         elseif ($data == 'admin_csv' && $is_admin) {
             $format = implode(', ', CSV_FORMAT);
             $msg = "📁 <b>CSV Format Status</b>\n\n";
-            $msg = $msg . "🔒 <b>LOCKED FORMAT:</b> " . $format . "\n";
-            $msg = $msg . "📊 <b>Total Columns:</b> 3\n";
-            $msg = $msg . "✅ <b>Status:</b> Permanently Locked\n\n";
+            $msg .= "🔒 <b>LOCKED FORMAT:</b> $format\n";
+            $msg .= "📊 <b>Total Columns:</b> 3\n";
+            $msg .= "✅ <b>Status:</b> Permanently Locked\n\n";
             
             if (file_exists(CSV_FILE)) {
                 $handle = fopen(CSV_FILE, 'r');
@@ -1718,38 +2145,74 @@ if ($update) {
                 fclose($handle);
                 
                 if ($header === CSV_FORMAT) {
-                    $msg = $msg . "✅ Current file format is correct!";
+                    $msg .= "✅ Current file format is correct!";
                 } else {
-                    $msg = $msg . "⚠️ File format mismatch! Auto-fixed on next write.";
+                    $msg .= "⚠️ File format mismatch! Auto-fixed on next write.";
                 }
             }
             sendMessage($chat_id, $msg, null, 'HTML');
             answerCallbackQuery($query['id'], "CSV Format");
         }
-        elseif ($data == 'refresh_pending' && $is_admin) {
-            $pending = get_pending_requests();
-            
-            if (empty($pending)) {
-                sendMessage($chat_id, "📭 No pending requests.");
-                answerCallbackQuery($query['id'], "Refreshed");
-                return;
-            }
-            
-            $msg = "⏳ <b>Pending Requests: " . count($pending) . "</b>\n\n";
-            foreach (array_slice($pending, 0, 10) as $req) {
-                $msg = $msg . "🆔 <code>" . $req['id'] . "</code>\n";
-                $msg = $msg . "👤 @" . $req['username'] . "\n";
-                $msg = $msg . "🎬 " . htmlspecialchars($req['movie']) . "\n";
-                $msg = $msg . "📅 " . date('d-m H:i', strtotime($req['date'])) . "\n━━━━━━━━━\n";
-            }
-            
-            sendMessage($chat_id, $msg, null, 'HTML');
-            answerCallbackQuery($query['id'], "Refreshed");
-        }
         elseif ($data == 'refresh_admin' && $is_admin) {
             show_admin_panel($chat_id);
             answerCallbackQuery($query['id'], "Refreshed");
         }
+
+        // Stats callbacks
+        elseif ($data == 'stats_basic' && $is_admin) {
+            admin_stats($chat_id, 'basic');
+            answerCallbackQuery($query['id'], "Basic Stats");
+        }
+        elseif ($data == 'stats_movies' && $is_admin) {
+            admin_stats($chat_id, 'movies');
+            answerCallbackQuery($query['id'], "Movie Stats");
+        }
+        elseif ($data == 'stats_users' && $is_admin) {
+            admin_stats($chat_id, 'users');
+            answerCallbackQuery($query['id'], "User Stats");
+        }
+        elseif (strpos($data, 'stats_refresh_') === 0 && $is_admin) {
+            $view = str_replace('stats_refresh_', '', $data);
+            admin_stats($chat_id, $view);
+            answerCallbackQuery($query['id'], "Refreshed");
+        }
+        elseif ($data == 'stats_export' && $is_admin) {
+            answerCallbackQuery($query['id'], "Export feature coming soon");
+        }
+
+        // Channels callbacks
+        elseif ($data == 'channels_public') {
+            show_all_channels($chat_id, 'public', $is_admin);
+            answerCallbackQuery($query['id'], "Public Channels");
+        }
+        elseif ($data == 'channels_private' && $is_admin) {
+            show_all_channels($chat_id, 'private', $is_admin);
+            answerCallbackQuery($query['id'], "Private Channels");
+        }
+        elseif ($data == 'channels_refresh_public') {
+            show_all_channels($chat_id, 'public', $is_admin);
+            answerCallbackQuery($query['id'], "Refreshed");
+        }
+        elseif ($data == 'channels_refresh_private' && $is_admin) {
+            show_all_channels($chat_id, 'private', $is_admin);
+            answerCallbackQuery($query['id'], "Refreshed");
+        }
+        elseif ($data == 'channels_stats' && $is_admin) {
+            $msg = "📊 Channel Statistics\n\n";
+            $all = get_all_channels();
+            $total_movies = count(get_all_movies_list());
+            $msg .= "Total Movies: $total_movies\n\n";
+            foreach ($all['public'] as $ch) {
+                $count = 0;
+                foreach (get_all_movies_list() as $m) {
+                    if ($m['channel_id'] == $ch['id']) $count++;
+                }
+                $msg .= "{$ch['icon']} {$ch['name']}: $count movies\n";
+            }
+            sendMessage($chat_id, $msg, null, 'HTML');
+            answerCallbackQuery($query['id'], "Channel Stats");
+        }
+
         else {
             answerCallbackQuery($query['id'], "Unknown command");
         }
