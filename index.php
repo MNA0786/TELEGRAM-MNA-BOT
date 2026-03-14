@@ -430,6 +430,9 @@ function calculateETA($current, $total, $start_time) {
     }
 }
 
+// ==============================
+// FIXED FUNCTION - NO ERRORS
+// ==============================
 function forward_page_movies_with_eta($chat_id, array $page_movies, $username = null) {
     $total = count($page_movies);
     if ($total === 0) return;
@@ -487,9 +490,9 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
     }
     
     $final_msg = "✅ <b>Forwarding Complete!</b>\n";
-    $final_msg = $final_msg . "├ 📊 Total: {$total}\n";
-    $final_msg = $final_msg . "├ ✅ Success: {$success_count}\n";
-    $final_msg = $final_msg . "├ ❌ Failed: {$fail_count}\n";
+    $final_msg = $final_msg . "├ 📊 Total: " . $total . "\n";
+    $final_msg = $final_msg . "├ ✅ Success: " . $success_count . "\n";
+    $final_msg = $final_msg . "├ ❌ Failed: " . $fail_count . "\n";
     $final_msg = $final_msg . "├ ⏱️ Time Taken: " . (time() - $start_time) . "s\n";
     $final_msg = $final_msg . "└ 📢 Join: @EntertainmentTadka786";
     
@@ -2000,7 +2003,6 @@ if ($update) {
             answerCallbackQuery($query['id'], "Refreshed");
         }
         elseif ($data == 'date_export') {
-            // Placeholder for export function
             answerCallbackQuery($query['id'], "Export feature coming soon");
         }
 
