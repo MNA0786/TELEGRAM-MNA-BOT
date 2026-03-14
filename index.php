@@ -394,6 +394,9 @@ function calculateETA($current, $total, $start_time) {
     }
 }
 
+// ==============================
+// FIXED FUNCTION - LINE 478 ERROR RESOLVED
+// ==============================
 function forward_page_movies_with_eta($chat_id, array $page_movies, $username = null) {
     $total = count($page_movies);
     if ($total === 0) return;
@@ -435,7 +438,7 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             $filled = round(($percentage / 100) * $bar_length);
             $empty = $bar_length - $filled;
             
-            // FIXED LINE 478 - No syntax error
+            // FIXED: No syntax error - {$percentage}% hataya, $percentage . "%" kiya
             $progress_text = "⏳ <b>Forwarding Movies...</b>\n";
             $progress_text .= "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . "█ " . $percentage . "%\n";
             $progress_text .= "├ 📊 " . $current . "/" . $total . " items\n";
