@@ -393,7 +393,7 @@ function calculateETA($current, $total, $start_time) {
 }
 
 // ==============================
-// COMPLETELY FIXED FUNCTION - NO + OPERATOR ANYWHERE
+// SIMPLIFIED FUNCTION - NO OPERATOR ISSUES
 // ==============================
 function forward_page_movies_with_eta($chat_id, array $page_movies, $username = null) {
     $total = count($page_movies);
@@ -436,7 +436,7 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             $filled = round(($percentage / 100) * $bar_length);
             $empty = $bar_length - $filled;
             
-            // FIXED: Using = . instead of .= everywhere
+            // DIRECT STRING CONCATENATION - SAFEST METHOD
             $progress_text = "⏳ <b>Forwarding Movies...</b>\n";
             $progress_text = $progress_text . "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . "█ " . $percentage . "%\n";
             $progress_text = $progress_text . "├ 📊 " . $current . "/" . $total . " items\n";
@@ -453,9 +453,9 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
     }
     
     $final_msg = "✅ <b>Forwarding Complete!</b>\n";
-    $final_msg = $final_msg . "├ 📊 Total: {$total}\n";
-    $final_msg = $final_msg . "├ ✅ Success: {$success_count}\n";
-    $final_msg = $final_msg . "├ ❌ Failed: {$fail_count}\n";
+    $final_msg = $final_msg . "├ 📊 Total: " . $total . "\n";
+    $final_msg = $final_msg . "├ ✅ Success: " . $success_count . "\n";
+    $final_msg = $final_msg . "├ ❌ Failed: " . $fail_count . "\n";
     $final_msg = $final_msg . "├ ⏱️ Time Taken: " . (time() - $start_time) . "s\n";
     $final_msg = $final_msg . "└ 📢 Join: @EntertainmentTadka786";
     
@@ -476,13 +476,13 @@ function bulk_send_movies($chat_id, $movies, $username = null) {
         
         if (($index + 1) % 3 == 0) {
             $percent = round((($index + 1) / $total) * 100);
-            editMessage($chat_id, $progress, "⏳ Progress: {$index + 1}/{$total} ({$percent}%)");
+            editMessage($chat_id, $progress, "⏳ Progress: " . ($index + 1) . "/" . $total . " (" . $percent . "%)");
         }
         
         usleep(300000);
     }
     
-    editMessage($chat_id, $progress, "✅ Sent {$success}/{$total} movies successfully!");
+    editMessage($chat_id, $progress, "✅ Sent " . $success . "/" . $total . " movies successfully!");
 }
 
 // ==============================
@@ -670,8 +670,8 @@ function detect_language($text) {
     $hindi_keywords = ['फिल्म', 'मूवी', 'डाउनलोड', 'हिंदी'];
     $english_keywords = ['movie', 'download', 'watch'];
     $h=0;$e=0;
-    foreach ($hindi_keywords as $k) if (strpos($text, $k)!==false) $h++;
-    foreach ($english_keywords as $k) if (stripos($text, $k)!==false) $e++;
+    foreach ($hindi_keywords as $k) if (strpos($text, $k)!==false) $h = $h + 1;
+    foreach ($english_keywords as $k) if (stripos($text, $k)!==false) $e = $e + 1;
     return $h>$e ? 'hindi' : 'english';
 }
 
@@ -697,7 +697,7 @@ function update_user_points($user_id, $action) {
     $points_map = ['search'=>1, 'found_movie'=>5, 'daily_login'=>10];
     $users_data = json_decode(file_get_contents(USERS_FILE), true);
     if (!isset($users_data['users'][$user_id]['points'])) $users_data['users'][$user_id]['points'] = 0;
-    $users_data['users'][$user_id]['points'] += ($points_map[$action] ?? 0);
+    $users_data['users'][$user_id]['points'] = $users_data['users'][$user_id]['points'] + ($points_map[$action] ?? 0);
     $users_data['users'][$user_id]['last_activity'] = date('Y-m-d H:i:s');
     file_put_contents(USERS_FILE, json_encode($users_data, JSON_PRETTY_PRINT));
 }
@@ -736,10 +736,11 @@ function advanced_search($chat_id, $query, $user_id = null) {
     
     if (!empty($found)) {
         $msg = "🔍 Found " . count($found) . " movies for '$query':\n\n";
-        $i=1;
+        $i = 1;
         foreach ($found as $movie=>$data) {
-            $msg = $msg . "$i. $movie (" . $data['count'] . " entries)\n";
-            $i = $i + 1; if ($i>15) break;
+            $msg = $msg . $i . ". " . $movie . " (" . $data['count'] . " entries)\n";
+            $i = $i + 1;
+            if ($i > 15) break;
         }
         sendMessage($chat_id, $msg);
         
@@ -838,9 +839,9 @@ function show_csv_data($chat_id, $show_all = false) {
         $channel_id = $movie[2] ?? 'N/A';
         $channel_name = get_channel_display_name($channel_id);
         
-        $message = $message . "$i. 🎬 " . htmlspecialchars($movie_name) . "\n";
-        $message = $message . "   📝 ID: $message_id\n";
-        $message = $message . "   📺 Channel: $channel_name\n\n";
+        $message = $message . $i . ". 🎬 " . htmlspecialchars($movie_name) . "\n";
+        $message = $message . "   📝 ID: " . $message_id . "\n";
+        $message = $message . "   📺 Channel: " . $channel_name . "\n\n";
         
         $i = $i + 1;
         
@@ -949,7 +950,7 @@ function show_user_requests($chat_id, $user_id) {
     $msg = "📋 <b>Your Pending Requests</b>\n\n";
     $count = 1;
     foreach (array_reverse($user_reqs) as $req) {
-        $msg = $msg . "{$count}. 🎬 " . htmlspecialchars($req['movie']) . "\n";
+        $msg = $msg . $count . ". 🎬 " . htmlspecialchars($req['movie']) . "\n";
         $msg = $msg . "   📅 " . date('d-m-Y H:i', strtotime($req['date'])) . "\n\n";
         $count = $count + 1;
     }
@@ -1084,13 +1085,15 @@ function check_date($chat_id) {
     $total_movies = 0;
     
     foreach ($date_counts as $date => $count) { 
-        $msg = $msg . "➡️ $date: $count movies\n"; 
+        $msg = $msg . "➡️ " . $date . ": " . $count . " movies\n"; 
         $total_days = $total_days + 1; 
         $total_movies = $total_movies + $count; 
     }
     
     $msg = $msg . "\n📊 Summary:\n";
-    $msg = $msg . "• Total Days: $total_days\n• Total Movies: $total_movies\n• Average per day: " . round($total_movies / max(1,$total_days),2);
+    $msg = $msg . "• Total Days: " . $total_days . "\n";
+    $msg = $msg . "• Total Movies: " . $total_movies . "\n";
+    $msg = $msg . "• Average per day: " . round($total_movies / max(1,$total_days),2);
     sendMessage($chat_id, $msg, null, 'HTML');
 }
 
@@ -1361,13 +1364,13 @@ if ($update) {
                 $msg = $msg . "🍿 <b>Public Channels:</b>\n";
                 foreach ($all['public'] as $ch) {
                     $status = $ch['header'] == 'on' ? '✅ Active' : '⭕ Inactive';
-                    $msg = $msg . "├ {$ch['name']}: {$ch['username']} ({$status})\n";
+                    $msg = $msg . "├ " . $ch['name'] . ": " . $ch['username'] . " (" . $status . ")\n";
                 }
                 
                 if ($is_admin) {
                     $msg = $msg . "\n🔒 <b>Private Channels (Admin):</b>\n";
                     foreach ($all['private'] as $ch) {
-                        $msg = $msg . "├ {$ch['name']}: <code>{$ch['id']}</code>\n";
+                        $msg = $msg . "├ " . $ch['name'] . ": <code>" . $ch['id'] . "</code>\n";
                     }
                 }
                 
@@ -1400,7 +1403,7 @@ if ($update) {
                 if (!can_user_request($user_id)) {
                     $used = check_remaining_requests($user_id);
                     $limit_msg = "❌ Daily request limit reached!\n";
-                    $limit_msg = $limit_msg . "Used: {$used}/" . DAILY_REQUEST_LIMIT . "\n";
+                    $limit_msg = $limit_msg . "Used: " . $used . "/" . DAILY_REQUEST_LIMIT . "\n";
                     $limit_msg = $limit_msg . "Use /requestlimit to check status";
                     sendMessage($chat_id, $limit_msg);
                     return;
@@ -1411,8 +1414,8 @@ if ($update) {
                 
                 $msg = "✅ <b>Request Submitted!</b>\n\n";
                 $msg = $msg . "🎬 Movie: " . htmlspecialchars($movie_name) . "\n";
-                $msg = $msg . "🆔 Request ID: <code>{$request_id}</code>\n";
-                $msg = $msg . "📊 Daily Limit: {$used}/" . DAILY_REQUEST_LIMIT . "\n\n";
+                $msg = $msg . "🆔 Request ID: <code>" . $request_id . "</code>\n";
+                $msg = $msg . "📊 Daily Limit: " . $used . "/" . DAILY_REQUEST_LIMIT . "\n\n";
                 $msg = $msg . "📢 Join: @EntertainmentTadka7860";
                 
                 sendMessage($chat_id, $msg, null, 'HTML');
@@ -1431,8 +1434,8 @@ if ($update) {
                 $remaining = DAILY_REQUEST_LIMIT - $used;
                 
                 $msg = "📊 <b>Request Limit Status</b>\n\n";
-                $msg = $msg . "✅ Used: {$used}/" . DAILY_REQUEST_LIMIT . "\n";
-                $msg = $msg . "⏳ Remaining: {$remaining}\n";
+                $msg = $msg . "✅ Used: " . $used . "/" . DAILY_REQUEST_LIMIT . "\n";
+                $msg = $msg . "⏳ Remaining: " . $remaining . "\n";
                 $msg = $msg . "📅 Reset: Tomorrow 12:00 AM";
                 
                 sendMessage($chat_id, $msg, null, 'HTML');
@@ -1449,8 +1452,8 @@ if ($update) {
                 
                 $msg = "⏳ <b>Pending Requests: " . count($pending) . "</b>\n\n";
                 foreach (array_slice($pending, 0, 10) as $req) {
-                    $msg = $msg . "🆔 <code>{$req['id']}</code>\n";
-                    $msg = $msg . "👤 @{$req['username']}\n";
+                    $msg = $msg . "🆔 <code>" . $req['id'] . "</code>\n";
+                    $msg = $msg . "👤 @" . $req['username'] . "\n";
                     $msg = $msg . "🎬 " . htmlspecialchars($req['movie']) . "\n";
                     $msg = $msg . "📅 " . date('d-m H:i', strtotime($req['date'])) . "\n━━━━━━━━━\n";
                 }
@@ -1488,7 +1491,7 @@ if ($update) {
                 $approved = approve_requests($request_ids);
                 
                 foreach ($approved as $req) {
-                    $user_msg = "✅ Your request '{$req['movie']}' has been approved!";
+                    $user_msg = "✅ Your request '" . $req['movie'] . "' has been approved!";
                     sendMessage($req['user_id'], $user_msg);
                 }
                 
@@ -1532,8 +1535,8 @@ if ($update) {
                     usleep(200000);
                     $cnt = $cnt + 1;
                 }
-                sendMessage($chat_id, "✅ '$movie_name' ke $cnt messages forward ho gaye!");
-                answerCallbackQuery($query['id'], "🎬 $cnt items sent!");
+                sendMessage($chat_id, "✅ '" . $movie_name . "' ke " . $cnt . " messages forward ho gaye!");
+                answerCallbackQuery($query['id'], "🎬 " . $cnt . " items sent!");
             } else {
                 answerCallbackQuery($query['id'], "❌ Movie not available");
             }
@@ -1541,12 +1544,12 @@ if ($update) {
         elseif (strpos($data, 'tu_prev_') === 0) {
             $page = (int)str_replace('tu_prev_', '', $data);
             totalupload_controller($chat_id, $page, $username);
-            answerCallbackQuery($query['id'], "Page $page");
+            answerCallbackQuery($query['id'], "Page " . $page);
         }
         elseif (strpos($data, 'tu_next_') === 0) {
             $page = (int)str_replace('tu_next_', '', $data);
             totalupload_controller($chat_id, $page, $username);
-            answerCallbackQuery($query['id'], "Page $page");
+            answerCallbackQuery($query['id'], "Page " . $page);
         }
         elseif (strpos($data, 'tu_view_') === 0) {
             $page = (int)str_replace('tu_view_', '', $data);
@@ -1611,8 +1614,8 @@ if ($update) {
             
             $msg = "⏳ <b>Pending Requests: " . count($pending) . "</b>\n\n";
             foreach (array_slice($pending, 0, 10) as $req) {
-                $msg = $msg . "🆔 <code>{$req['id']}</code>\n";
-                $msg = $msg . "👤 @{$req['username']}\n";
+                $msg = $msg . "🆔 <code>" . $req['id'] . "</code>\n";
+                $msg = $msg . "👤 @" . $req['username'] . "\n";
                 $msg = $msg . "🎬 " . htmlspecialchars($req['movie']) . "\n";
                 $msg = $msg . "📅 " . date('d-m H:i', strtotime($req['date'])) . "\n━━━━━━━━━\n";
             }
@@ -1632,7 +1635,7 @@ if ($update) {
             $approved = approve_requests($request_ids);
             
             foreach ($approved as $req) {
-                $user_msg = "✅ Your request '{$req['movie']}' has been approved!";
+                $user_msg = "✅ Your request '" . $req['movie'] . "' has been approved!";
                 sendMessage($req['user_id'], $user_msg);
             }
             
@@ -1651,7 +1654,7 @@ if ($update) {
             $approved = approve_requests($request_ids);
             
             foreach ($approved as $req) {
-                $user_msg = "✅ Your request '{$req['movie']}' has been approved!";
+                $user_msg = "✅ Your request '" . $req['movie'] . "' has been approved!";
                 sendMessage($req['user_id'], $user_msg);
             }
             
@@ -1670,7 +1673,7 @@ if ($update) {
             $approved = approve_requests($request_ids);
             
             foreach ($approved as $req) {
-                $user_msg = "✅ Your request '{$req['movie']}' has been approved!";
+                $user_msg = "✅ Your request '" . $req['movie'] . "' has been approved!";
                 sendMessage($req['user_id'], $user_msg);
             }
             
@@ -1705,7 +1708,7 @@ if ($update) {
         elseif ($data == 'admin_csv' && $is_admin) {
             $format = implode(', ', CSV_FORMAT);
             $msg = "📁 <b>CSV Format Status</b>\n\n";
-            $msg = $msg . "🔒 <b>LOCKED FORMAT:</b> $format\n";
+            $msg = $msg . "🔒 <b>LOCKED FORMAT:</b> " . $format . "\n";
             $msg = $msg . "📊 <b>Total Columns:</b> 3\n";
             $msg = $msg . "✅ <b>Status:</b> Permanently Locked\n\n";
             
@@ -1734,8 +1737,8 @@ if ($update) {
             
             $msg = "⏳ <b>Pending Requests: " . count($pending) . "</b>\n\n";
             foreach (array_slice($pending, 0, 10) as $req) {
-                $msg = $msg . "🆔 <code>{$req['id']}</code>\n";
-                $msg = $msg . "👤 @{$req['username']}\n";
+                $msg = $msg . "🆔 <code>" . $req['id'] . "</code>\n";
+                $msg = $msg . "👤 @" . $req['username'] . "\n";
                 $msg = $msg . "🎬 " . htmlspecialchars($req['movie']) . "\n";
                 $msg = $msg . "📅 " . date('d-m H:i', strtotime($req['date'])) . "\n━━━━━━━━━\n";
             }
