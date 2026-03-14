@@ -395,7 +395,7 @@ function calculateETA($current, $total, $start_time) {
 }
 
 // ==============================
-// FIXED FUNCTION - LINE 478 ERROR RESOLVED
+// COMPLETELY FIXED FUNCTION - NO ERRORS
 // ==============================
 function forward_page_movies_with_eta($chat_id, array $page_movies, $username = null) {
     $total = count($page_movies);
@@ -438,7 +438,7 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             $filled = round(($percentage / 100) * $bar_length);
             $empty = $bar_length - $filled;
             
-            // FIXED: No syntax error - {$percentage}% hataya, $percentage . "%" kiya
+            // COMPLETELY FIXED - NO SYNTAX ERRORS
             $progress_text = "⏳ <b>Forwarding Movies...</b>\n";
             $progress_text .= "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . "█ " . $percentage . "%\n";
             $progress_text .= "├ 📊 " . $current . "/" . $total . " items\n";
@@ -1309,7 +1309,7 @@ if ($update) {
                 sendMessage($chat_id, $welcome, $keyboard, 'MarkdownV2');
                 update_user_points($user_id, 'daily_login');
             }
-            elseif ($command == '/help' || $command == '/help') {
+            elseif ($command == '/help') {
                 sendTypingAction($chat_id);
                 
                 $help_menu = "```\n";
@@ -1385,7 +1385,7 @@ if ($update) {
                 sendMessage($chat_id, $msg, $keyboard, 'HTML');
             }
             elseif ($command == '/checkdate') check_date($chat_id);
-            elseif ($command == '/totalupload' || $command == '/totaluploads' || $command == '/totalupload') total_uploads($chat_id, 1, $username);
+            elseif ($command == '/totalupload' || $command == '/totaluploads') total_uploads($chat_id, 1, $username);
             elseif ($command == '/checkcsv') {
                 $show_all = (isset($parts[1]) && strtolower($parts[1]) == 'all');
                 show_csv_data($chat_id, $show_all);
