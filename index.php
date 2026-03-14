@@ -395,7 +395,7 @@ function calculateETA($current, $total, $start_time) {
 }
 
 // ==============================
-// COMPLETELY REWRITTEN FUNCTION - NO ERRORS
+// ULTRA SIMPLE FUNCTION - NO ERRORS
 // ==============================
 function forward_page_movies_with_eta($chat_id, array $page_movies, $username = null) {
     $total = count($page_movies);
@@ -409,9 +409,7 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
     $last_update = 0;
     
     $progress_msg = sendMessage($chat_id, 
-        "⏳ <b>Preparing to forward {$total} movies...</b>\n" .
-        "├ ETA: Calculating...\n" .
-        "└ Status: Initializing...", 
+        "⏳ Preparing to forward " . $total . " movies...\nETA: Calculating...", 
         null, 'HTML'
     );
     
@@ -438,14 +436,15 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             $filled = round(($percentage / 100) * $bar_length);
             $empty = $bar_length - $filled;
             
-            // CLEAN CONCATENATION - NO + OPERATOR ANYWHERE
-            $progress_text = "⏳ <b>Forwarding Movies...</b>\n";
+            // SIMPLE STRING BUILDING - NO COMPLEX SYNTAX
+            $progress_text = "";
+            $progress_text = $progress_text . "⏳ Forwarding Movies...\n";
             $progress_text = $progress_text . "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . "█ " . $percentage . "%\n";
             $progress_text = $progress_text . "├ 📊 " . $current . "/" . $total . " items\n";
             $progress_text = $progress_text . "├ ✅ Success: " . $success_count . "\n";
             $progress_text = $progress_text . "├ ❌ Failed: " . $fail_count . "\n";
             $progress_text = $progress_text . "├ ⏱️ ETA: " . $eta . "\n";
-            $progress_text = $progress_text . "└ 🎬 Current: " . htmlspecialchars(substr($m['movie_name'], 0, 30)) . "...";
+            $progress_text = $progress_text . "└ 🎬 Current: " . substr($m['movie_name'], 0, 30) . "...";
             
             editMessage($chat_id, $progress_msg, $progress_text, null, 'HTML');
             $last_update = $now;
@@ -454,10 +453,11 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
         usleep(300000);
     }
     
-    $final_msg = "✅ <b>Forwarding Complete!</b>\n";
-    $final_msg = $final_msg . "├ 📊 Total: {$total}\n";
-    $final_msg = $final_msg . "├ ✅ Success: {$success_count}\n";
-    $final_msg = $final_msg . "├ ❌ Failed: {$fail_count}\n";
+    $final_msg = "";
+    $final_msg = $final_msg . "✅ Forwarding Complete!\n";
+    $final_msg = $final_msg . "├ 📊 Total: " . $total . "\n";
+    $final_msg = $final_msg . "├ ✅ Success: " . $success_count . "\n";
+    $final_msg = $final_msg . "├ ❌ Failed: " . $fail_count . "\n";
     $final_msg = $final_msg . "├ ⏱️ Time Taken: " . (time() - $start_time) . "s\n";
     $final_msg = $final_msg . "└ 📢 Join: @EntertainmentTadka786";
     
