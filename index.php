@@ -434,14 +434,14 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             $bar_length = 20;
             $filled = round(($percentage / 100) * $bar_length);
             $empty = $bar_length - $filled;
-            $progress_bar = "█" . str_repeat("█", $filled) . str_repeat("░", $empty) . "█";
             
+            // FIXED LINE 478 - 485
             $progress_text = "⏳ <b>Forwarding Movies...</b>\n";
-            $progress_text .= "├ $progress_bar {$percentage}%\n";
-            $progress_text .= "├ 📊 {$current}/{$total} items\n";
-            $progress_text .= "├ ✅ Success: {$success_count}\n";
-            $progress_text .= "├ ❌ Failed: {$fail_count}\n";
-            $progress_text .= "├ ⏱️ ETA: {$eta}\n";
+            $progress_text .= "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . "█ " . $percentage . "%\n";
+            $progress_text .= "├ 📊 " . $current . "/" . $total . " items\n";
+            $progress_text .= "├ ✅ Success: " . $success_count . "\n";
+            $progress_text .= "├ ❌ Failed: " . $fail_count . "\n";
+            $progress_text .= "├ ⏱️ ETA: " . $eta . "\n";
             $progress_text .= "└ 🎬 Current: " . htmlspecialchars(substr($m['movie_name'], 0, 30)) . "...";
             
             editMessage($chat_id, $progress_msg, $progress_text, null, 'HTML');
