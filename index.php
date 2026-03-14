@@ -394,7 +394,9 @@ function calculateETA($current, $total, $start_time) {
     }
 }
 
+// ==============================
 // COMPLETELY FIXED FUNCTION - NO ERRORS
+// ==============================
 function forward_page_movies_with_eta($chat_id, array $page_movies, $username = null) {
     $total = count($page_movies);
     if ($total === 0) return;
@@ -438,7 +440,7 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             
             // COMPLETELY FIXED - NO SYNTAX ERRORS
             $progress_text = "⏳ <b>Forwarding Movies...</b>\n";
-            $progress_text .= "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . " " . $percentage . "%\n";
+            $progress_text .= "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . "█ " . $percentage . "%\n";
             $progress_text .= "├ 📊 " . $current . "/" . $total . " items\n";
             $progress_text .= "├ ✅ Success: " . $success_count . "\n";
             $progress_text .= "├ ❌ Failed: " . $fail_count . "\n";
