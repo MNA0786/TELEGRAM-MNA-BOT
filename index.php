@@ -134,6 +134,7 @@ function validate_csv_format() {
         $old_header = fgetcsv($handle);
         while (($row = fgetcsv($handle)) !== FALSE) {
             if (count($row) >= 3) {
+                // Try to map old format to new format
                 $data[] = [
                     'movie_name' => $row[0] ?? 'Unknown',
                     'message_id' => $row[1] ?? '',
@@ -143,6 +144,7 @@ function validate_csv_format() {
         }
         fclose($handle);
         
+        // Write with correct format
         $handle = fopen(CSV_FILE, 'w');
         fputcsv($handle, $expected);
         foreach ($data as $row) {
@@ -332,6 +334,7 @@ function copyMessage($chat_id, $from_chat_id, $message_id, $caption = '') {
     ];
     if (!empty($caption)) {
         $params['caption'] = $caption;
+        $params['parse_mode'] = 'HTML';
     }
     return apiRequest('copyMessage', $params);
 }
@@ -383,29 +386,50 @@ function deliver_item_to_chat($chat_id, $item) {
     return false;
 }
 
-function deliver_movie_with_attribution($chat_id, $item, $username = null) {
+// ==============================
+// DELIVERY WITH AERIAL CAPTION - NEW
+// ==============================
+function deliver_movie_with_aerial_caption($chat_id, $item, $username = null) {
     $channel_id = $item['channel_id'] ?? PUBLIC_CHANNELS[0]['id'];
     $movie_name = $item['movie_name'];
     
     if (!empty($item['message_id']) && is_numeric($item['message_id'])) {
+        
+        // Create AERIAL style caption
+        $caption = "🎬 <b>" . htmlspecialchars($movie_name) . "</b>\n\n";
+        $caption .= "🔥 <b>Channels:</b>\n";
+        $caption .= "🍿 Main Channel    : @EntertainmentTadka786\n";
+        $caption .= "🎬 Serial Channel  : @Entertainment_Tadka_Serial_786\n";
+        $caption .= "🎭 Theater Prints  : @threater_print_movies\n";
+        $caption .= "🔒 Backup Channel  : @ETBackup\n";
+        $caption .= "📥 Request Group   : @EntertainmentTadka7860\n\n";
+        
         if ($username) {
-            $caption = "━━━━━━━━━━━━━━━\nREQUESTED BY : @{$username}";
-            $result = json_decode(copyMessage($chat_id, $channel_id, $item['message_id'], $caption), true);
-        } else {
-            $result = json_decode(forwardMessage($chat_id, $channel_id, $item['message_id']), true);
+            $caption .= "━━━━━━━━━━━━━━━━━━━━\n";
+            $caption .= "👑 <b>REQUESTED BY : @" . htmlspecialchars($username) . "</b>";
         }
+        
+        // Try to copy with caption first
+        $result = json_decode(copyMessage($chat_id, $channel_id, $item['message_id'], $caption), true);
         
         if ($result && $result['ok']) {
             return true;
         } else {
-            $text = "🎬 <b>" . htmlspecialchars($movie_name) . "</b>\n\n";
-            $text .= "📢 Channel: " . get_channel_display_name($channel_id) . "\n";
-            $text .= "🆔 Message ID: <code>{$item['message_id']}</code>\n";
-            if ($username) {
-                $text .= "👤 Requested by: @{$username}\n";
+            // If copy fails, forward and send caption as separate message
+            $forward_result = json_decode(forwardMessage($chat_id, $channel_id, $item['message_id']), true);
+            
+            if ($forward_result && $forward_result['ok']) {
+                if ($username) {
+                    // Send caption as reply
+                    apiRequest('sendMessage', [
+                        'chat_id' => $chat_id,
+                        'text' => $caption,
+                        'reply_to_message_id' => $forward_result['result']['message_id'],
+                        'parse_mode' => 'HTML'
+                    ]);
+                }
+                return true;
             }
-            sendMessage($chat_id, $text, null, 'HTML');
-            return false;
         }
     }
     return false;
@@ -428,7 +452,7 @@ function calculateETA($current, $total, $start_time) {
 }
 
 // ==============================
-// COMPLETELY REWRITTEN FUNCTION - NO ERRORS
+// FORWARD PAGE MOVIES WITH ETA - UPDATED
 // ==============================
 function forward_page_movies_with_eta($chat_id, array $page_movies, $username = null) {
     $total = count($page_movies);
@@ -460,7 +484,8 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             sendTypingAction($chat_id);
         }
         
-        $success = deliver_movie_with_attribution($chat_id, $m, $username);
+        // UPDATED: Using new aerial caption function
+        $success = deliver_movie_with_aerial_caption($chat_id, $m, $username);
         if ($success) {
             $success_count = $success_count + 1;
         } else {
@@ -475,8 +500,7 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
             $filled = round(($percentage / 100) * $bar_length);
             $empty = $bar_length - $filled;
             
-            $progress_text = "";
-            $progress_text = $progress_text . "⏳ <b>Forwarding Movies...</b>\n";
+            $progress_text = "⏳ <b>Forwarding Movies...</b>\n";
             $progress_text = $progress_text . "├ " . str_repeat("█", $filled) . str_repeat("░", $empty) . "█ " . $percentage . "%\n";
             $progress_text = $progress_text . "├ 📊 " . $current . "/" . $total . " items\n";
             $progress_text = $progress_text . "├ ✅ Success: " . $success_count . "\n";
@@ -491,8 +515,7 @@ function forward_page_movies_with_eta($chat_id, array $page_movies, $username = 
         usleep(300000);
     }
     
-    $final_msg = "";
-    $final_msg = $final_msg . "✅ <b>Forwarding Complete!</b>\n";
+    $final_msg = "✅ <b>Forwarding Complete!</b>\n";
     $final_msg = $final_msg . "├ 📊 Total: " . $total . "\n";
     $final_msg = $final_msg . "├ ✅ Success: " . $success_count . "\n";
     $final_msg = $final_msg . "├ ❌ Failed: " . $fail_count . "\n";
@@ -512,7 +535,8 @@ function bulk_send_movies($chat_id, $movies, $username = null) {
     $index = 0;
     foreach ($movies as $movie) {
         $index = $index + 1;
-        if (deliver_movie_with_attribution($chat_id, $movie, $username)) {
+        // UPDATED: Using new aerial caption function
+        if (deliver_movie_with_aerial_caption($chat_id, $movie, $username)) {
             $success = $success + 1;
         }
         
@@ -766,7 +790,7 @@ function show_search_results($chat_id, $results, $query, $page = 1) {
         $i = $i + 1;
         $num = $i;
         $channel_display = get_channel_display_name($movie['channel_id']);
-        $msg .= "$num. <b>" . htmlspecialchars($movie['movie_name']) . "</b>\n";
+        $msg .= "$num. 🎬 <b>" . htmlspecialchars($movie['movie_name']) . "</b>\n";
         $msg .= "   $channel_display\n\n";
     }
     
@@ -1933,7 +1957,7 @@ if ($update) {
 
         global $movie_messages;
 
-        // Movie delivery callback
+        // Movie delivery callback - UPDATED with aerial caption
         if (strpos($data, 'get_') === 0) {
             $movie_name = substr($data, 4);
             $movie_lower = strtolower($movie_name);
@@ -1942,7 +1966,7 @@ if ($update) {
                 $entries = $movie_messages[$movie_lower];
                 $cnt = 0;
                 foreach ($entries as $entry) {
-                    deliver_movie_with_attribution($chat_id, $entry, $username);
+                    deliver_movie_with_aerial_caption($chat_id, $entry, $username);
                     usleep(200000);
                     $cnt = $cnt + 1;
                 }
