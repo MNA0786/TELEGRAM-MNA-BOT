@@ -1775,7 +1775,7 @@ if ($update) {
             if ($command == '/start') {
                 sendTypingAction($chat_id);
                 
-                $welcome = "🌟✨🎬 <b>WELCOME TO THE CLUB</b> 🎬✨🌟\n\n";
+                $welcome = "🌟✨🎬 <b>WELCOME TO THE ENTERTAINMENT TADKA!</b> 🎬✨🌟\n\n";
                 $welcome .= "👇 <b>Aap kya dekhna chahenge?</b>\n\n";
                 $welcome .= "🎯 <b>Search Tips:</b>\n";
                 $welcome .= "🔸 Bas movie ka naam likho\n";
